@@ -9,7 +9,7 @@
   },
   "dependencies": {
     "@vibednd/shared": "*",
-    "better-sqlite3": "^11.5.0",
+    "better-sqlite3": "^12.4.1",
     "express": "^4.21.2",
     "ws": "^8.18.0"
   },
