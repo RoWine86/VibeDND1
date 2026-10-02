@@ -13,9 +13,46 @@ import MapCanvas from '../components/MapCanvas';
 import '../styles/map.css';
 
 // ─── QR-код на canvas (автономная реализация, без библиотек) ───────────────
+// Поддерживаются версии 1–10, byte mode, маска 0. Блоки ECC (версии 4–10)
+// чередуются по стандарту; 271 байт (v10-L) хватает с запасом на URL вида
+// http://192.168.x.x:5173/player/<uuid>.
 
 type EcLevel = 0 | 1 | 2 | 3; // L M Q H
-const EC_CODEWORDS: Record<EcLevel, number> = { 0: 7, 1: 10, 2: 13, 3: 17 };
+
+// Число кодов ECC на блок и группы блоков [кол-во блоков, байт данных в блоке]
+// для версий 1–10 (ISO/IEC 18004, таблица 9). Сверено с RS_BLOCK_TABLE
+// библиотеки python-qrcode (qrcode/base.py): все 40 строк совпадают по
+// данным, ECC на блок и разбиению на группы.
+const ECC_TABLE: Record<EcLevel, { ec: number; g1: [number, number]; g2: [number, number] }[]> = {
+  0: [ // L
+    { ec: 7, g1: [1, 19], g2: [0, 0] }, { ec: 10, g1: [1, 34], g2: [0, 0] },
+    { ec: 15, g1: [1, 55], g2: [0, 0] }, { ec: 20, g1: [1, 80], g2: [0, 0] },
+    { ec: 26, g1: [1, 108], g2: [0, 0] }, { ec: 18, g1: [2, 68], g2: [0, 0] },
+    { ec: 20, g1: [2, 78], g2: [0, 0] }, { ec: 24, g1: [2, 97], g2: [0, 0] },
+    { ec: 30, g1: [2, 116], g2: [0, 0] }, { ec: 18, g1: [2, 68], g2: [2, 69] },
+  ],
+  1: [ // M
+    { ec: 10, g1: [1, 16], g2: [0, 0] }, { ec: 16, g1: [1, 28], g2: [0, 0] },
+    { ec: 26, g1: [1, 44], g2: [0, 0] }, { ec: 18, g1: [2, 32], g2: [0, 0] },
+    { ec: 24, g1: [2, 43], g2: [0, 0] }, { ec: 16, g1: [4, 27], g2: [0, 0] },
+    { ec: 18, g1: [4, 31], g2: [0, 0] }, { ec: 22, g1: [2, 38], g2: [2, 39] },
+    { ec: 22, g1: [3, 36], g2: [2, 37] }, { ec: 26, g1: [4, 43], g2: [1, 44] },
+  ],
+  2: [ // Q
+    { ec: 13, g1: [1, 13], g2: [0, 0] }, { ec: 22, g1: [1, 22], g2: [0, 0] },
+    { ec: 18, g1: [2, 17], g2: [0, 0] }, { ec: 26, g1: [2, 24], g2: [0, 0] },
+    { ec: 18, g1: [2, 15], g2: [2, 16] }, { ec: 24, g1: [4, 19], g2: [0, 0] },
+    { ec: 18, g1: [2, 14], g2: [4, 15] }, { ec: 22, g1: [4, 18], g2: [2, 19] },
+    { ec: 20, g1: [4, 16], g2: [4, 17] }, { ec: 24, g1: [6, 15], g2: [2, 16] },
+  ],
+  3: [ // H
+    { ec: 17, g1: [1, 9], g2: [0, 0] }, { ec: 28, g1: [1, 16], g2: [0, 0] },
+    { ec: 22, g1: [2, 13], g2: [0, 0] }, { ec: 16, g1: [4, 9], g2: [0, 0] },
+    { ec: 22, g1: [2, 11], g2: [2, 12] }, { ec: 28, g1: [4, 15], g2: [0, 0] },
+    { ec: 26, g1: [3, 13], g2: [1, 14] }, { ec: 26, g1: [3, 14], g2: [2, 15] },
+    { ec: 24, g1: [4, 12], g2: [4, 13] }, { ec: 28, g1: [6, 15], g2: [2, 16] },
+  ],
+};
 
 interface QrCode {
   size: number;
@@ -57,7 +94,7 @@ function qrRemainder(data: Uint8Array, gen: Uint8Array): Uint8Array {
   return Uint8Array.from(result);
 }
 
-function qrCompute(text: string, ecl: EcLevel): QrCode {
+function toUtf8Bytes(text: string): number[] {
   const bytes: number[] = [];
   for (let i = 0; i < text.length; i++) {
     const cp = text.codePointAt(i)!;
@@ -77,21 +114,60 @@ function qrCompute(text: string, ecl: EcLevel): QrCode {
       );
     }
   }
-  const capacity = 17; // версия 1, byte mode: 17 байт данных
-  if (bytes.length > capacity) throw new Error('Строка слишком длинная для QR версии 1');
-  const len = bytes.length;
-  const packed: number[] = [0x40 | (len >>> 4), ((len & 0xf) << 4) | (bytes[0] ?? 0)];
-  for (let i = 1; i < len; i++) {
-    packed.push(((bytes[i - 1]! & 0xf) << 4) | (bytes[i]! >>> 4));
-  }
-  packed.push((bytes[len - 1]! & 0xf) << 4);
-  const pads = [0xec, 0x11];
-  for (let i = 0; packed.length < 19; i++) packed.push(pads[i & 1]!);
-  const data = Uint8Array.from(packed);
-  const ec = qrRemainder(data, qrGenerator(EC_CODEWORDS[ecl]));
-  const codewords = new Uint8Array([...data, ...ec]);
+  return bytes;
+}
 
-  const size = 21;
+function qrCompute(text: string, ecl: EcLevel, version: number): QrCode {
+  const bytes = toUtf8Bytes(text);
+  const cfg = ECC_TABLE[ecl][version - 1]!;
+  const dataCapacity = cfg.g1[0] * cfg.g1[1] + cfg.g2[0] * cfg.g2[1];
+  const lenBits = version >= 10 ? 16 : 8; // счётчик в byte mode: 8 бит (v1–9), 16 бит (v10+)
+  if (bytes.length > dataCapacity || bytes.length >= 1 << lenBits) {
+    throw new Error('Строка слишком длинная для этой версии QR');
+  }
+
+  // поток бит: режим 0100, счётчик, данные, терминатор, выравнивание, заполнители
+  const bits: number[] = [];
+  const pushBits = (val: number, n: number) => {
+    for (let i = n - 1; i >= 0; i--) bits.push((val >>> i) & 1);
+  };
+  pushBits(0b0100, 4);
+  pushBits(bytes.length, lenBits);
+  for (const b of bytes) pushBits(b, 8);
+  pushBits(0, Math.min(4, dataCapacity * 8 - bits.length));
+  while (bits.length % 8 !== 0) bits.push(0);
+  const pads = [0xec, 0x11];
+  for (let i = 0; bits.length < dataCapacity * 8; i++) pushBits(pads[i & 1]!, 8);
+
+  const dataBytes = Uint8Array.from(
+    Array.from({ length: dataCapacity }, (_, i) =>
+      bits.slice(i * 8, i * 8 + 8).reduce((acc, b) => (acc << 1) | b, 0)),
+  );
+
+  // разбивка на блоки и ECC
+  const gen = qrGenerator(cfg.ec);
+  const dataBlocks: Uint8Array[] = [];
+  const ecBlocks: Uint8Array[] = [];
+  let off = 0;
+  for (const [count, size] of [cfg.g1, cfg.g2]) {
+    for (let i = 0; i < count; i++) {
+      const block = dataBytes.slice(off, off + size);
+      off += size;
+      dataBlocks.push(block);
+      ecBlocks.push(qrRemainder(block, gen));
+    }
+  }
+  // чередование: сначала данные по байту из каждого блока, затем ECC
+  const codewords: number[] = [];
+  const maxData = Math.max(...dataBlocks.map((b) => b.length));
+  for (let i = 0; i < maxData; i++) {
+    for (const b of dataBlocks) if (i < b.length) codewords.push(b[i]!);
+  }
+  for (let i = 0; i < cfg.ec; i++) {
+    for (const b of ecBlocks) codewords.push(b[i]!);
+  }
+
+  const size = 17 + version * 4;
   const modules = new Uint8Array(size * size).fill(2); // 2 = ещё не задано
   const isFunc = new Uint8Array(size * size);
   const set = (x: number, y: number, dark: boolean, func: boolean) => {
@@ -112,6 +188,28 @@ function qrCompute(text: string, ecl: EcLevel): QrCode {
   finder(3, 3);
   finder(size - 4, 3);
   finder(3, size - 4);
+
+  // паттерны выравнивания (версии 2+): центры из координат
+  if (version >= 2) {
+    const numAlign = Math.floor(version / 7) + 2;
+    const step = version === 32
+      ? 26
+      : Math.ceil((version * 4 + 4) / (numAlign * 2 - 2)) * 2;
+    const coords: number[] = [6];
+    for (let i = numAlign - 1; i >= 1; i--) coords.push(size - 7 - (i - 1) * step);
+    for (const cy of coords) {
+      for (const cx of coords) {
+        // пропускаем углы, занятые паттернами поиска
+        if (isFunc[cy * size + cx]) continue;
+        for (let dy = -2; dy <= 2; dy++) {
+          for (let dx = -2; dx <= 2; dx++) {
+            set(cx + dx, cy + dy, Math.max(Math.abs(dx), Math.abs(dy)) !== 1, true);
+          }
+        }
+      }
+    }
+  }
+
   for (let i = 8; i < size - 8; i++) {
     set(i, 6, i % 2 === 0, true);
     set(6, i, i % 2 === 0, true);
@@ -127,6 +225,13 @@ function qrCompute(text: string, ecl: EcLevel): QrCode {
   for (let i = 0; i < 8; i++) {
     set(size - 1 - i, 8, false, true);
     set(8, size - 1 - i, false, true);
+  }
+  // зарезервировать области версии (версии 7+)
+  if (version >= 7) {
+    for (let i = 0; i < 18; i++) {
+      set(Math.floor(i / 3) + size - 11, i % 3, false, true);
+      set(i % 3, Math.floor(i / 3) + size - 11, false, true);
+    }
   }
   // данные зигзагом справа налево
   let bit = 0;
@@ -167,16 +272,31 @@ function qrCompute(text: string, ecl: EcLevel): QrCode {
   for (let i = 0; i < 8; i++) set(size - 1 - i, 8, fmtBit(i), true);
   for (let i = 8; i < 15; i++) set(8, size - 15 + i, fmtBit(i), true);
   set(8, size - 8, true, true);
+  // информация о версии (версии 7+): БЧХ(18,6)
+  if (version >= 7) {
+    let vrem = version;
+    for (let i = 0; i < 12; i++) vrem = (vrem << 1) ^ ((vrem >>> 11) * 0x1f25);
+    const vbits = (version << 12) | vrem;
+    for (let i = 0; i < 18; i++) {
+      const dark = ((vbits >>> i) & 1) === 1;
+      const a = Math.floor(i / 3) + size - 11;
+      const b = i % 3;
+      set(a, b, dark, true);
+      set(b, a, dark, true);
+    }
+  }
   return { size, modules };
 }
 
 function qrForUrl(url: string): QrCode {
   let lastErr: unknown = null;
   for (const ecl of [3, 2, 1, 0] as EcLevel[]) {
-    try {
-      return qrCompute(url, ecl);
-    } catch (e) {
-      lastErr = e;
+    for (let version = 1; version <= 10; version++) {
+      try {
+        return qrCompute(url, ecl, version);
+      } catch (e) {
+        lastErr = e;
+      }
     }
   }
   throw lastErr;
@@ -184,12 +304,15 @@ function qrForUrl(url: string): QrCode {
 
 function QrCanvas({ url }: { url: string }) {
   const ref = useRef<HTMLCanvasElement>(null);
+  const [failed, setFailed] = useState(false);
   useEffect(() => {
     const canvas = ref.current;
     if (!canvas) return;
+    setFailed(false);
     try {
       const qr = qrForUrl(url);
-      const scalePx = 8;
+      // Чем больше версия, тем меньше модуль: целимся в ~300px по ширине
+      const scalePx = Math.max(2, Math.floor(300 / qr.size));
       const border = 4;
       canvas.width = (qr.size + border * 2) * scalePx;
       canvas.height = canvas.width;
@@ -205,9 +328,13 @@ function QrCanvas({ url }: { url: string }) {
         }
       }
     } catch {
-      // слишком длинный URL — крупная текстовая ссылка ниже всё покажет
+      // слишком длинный URL — покажем текстовую ссылку вместо пустого холста
+      setFailed(true);
     }
   }, [url]);
+  if (failed) {
+    return <p className="board-lobby-dim">QR не сформирован (ссылка слишком длинная) — используйте текстовую ссылку ниже.</p>;
+  }
   return <canvas ref={ref} className="board-qr" />;
 }
 

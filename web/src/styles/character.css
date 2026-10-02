@@ -345,6 +345,21 @@ button.cond-chip { font-size: 13px; padding: 4px 12px; }
   background: transparent;
 }
 button.inv-eq { cursor: pointer; }
+.inv-row .inv-eq.dim { color: var(--text-dim); border-color: var(--text-dim); }
+.inv-row .inv-noprof {
+  font-size: 11px;
+  color: var(--gold-bright);
+  border: 1px solid var(--gold-bright);
+  border-radius: 999px;
+  padding: 1px 8px;
+  background: transparent;
+  white-space: nowrap;
+}
+
+.pending-hp {
+  border-color: var(--gold);
+  background: rgba(201, 162, 39, 0.08);
+}
 .inv-add { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
 .inv-add select { flex: 2; min-width: 140px; }
 .inv-add input { width: 70px; }

@@ -8,8 +8,8 @@ import {
 } from 'lucide-react';
 import {
   ABILITIES, ABILITY_NAMES_RU, CONDITION_NAMES_RU, SKILL_ABILITY, SKILL_NAMES_RU,
-  abilityModifier, characterLevel, effectiveScores, formatFormula, modifierText,
-  proficiencyBonus, rollDice,
+  abilityModifier, canEquip, characterLevel, effectiveScores, formatFormula, modifierText,
+  signedText, proficiencyBonus, rollDice, isProficientWith, usedHands,
 } from '@vibednd/shared';
 import type {
   Ability, Character, CharacterClass, ClassResource, ConditionKey, Item,
@@ -86,9 +86,10 @@ export default function CharacterSheet({ character, onPatch, readonly }: Charact
     .filter((e) => e.equipped)
     .map((e) => itemById.get(e.itemId))
     .filter((i): i is Item => !!i && i.category === 'armor' && (i.armorClassBase ?? 0) > 2);
-  const hasShield = character.inventory.some(
-    (e) => e.equipped && itemById.get(e.itemId)?.id === 'shield',
-  );
+  const hasShield = character.inventory.some((e) => {
+    const it = itemById.get(e.itemId);
+    return e.equipped && !!it && (it.isShield ?? it.id === 'shield');
+  });
   let armorClass = 10 + dexMod;
   const armor = equippedArmor[0];
   if (armor?.armorClassBase != null) {
@@ -161,7 +162,7 @@ export default function CharacterSheet({ character, onPatch, readonly }: Charact
         key: Date.now(),
         label: 'Кость хитов (короткий отдых)',
         total: heal,
-        detail: `1к${character.hitDieType} ${modifierText(conMod)}`,
+        detail: `1к${character.hitDieType} ${signedText(conMod)}`,
       });
     }
   };
@@ -214,6 +215,12 @@ export default function CharacterSheet({ character, onPatch, readonly }: Charact
     .map((id) => itemById.get(id))
     .filter((i): i is Item => !!i);
 
+  // Настраиваться можно только на экипированные предметы, требующие настройки
+  const attunableItems = character.inventory
+    .filter((e) => e.equipped)
+    .map((e) => itemById.get(e.itemId))
+    .filter((i): i is Item => !!i && !!i.requiresAttunement);
+
   const hpPct = character.maxHp > 0 ? (character.currentHp / character.maxHp) * 100 : 0;
   const hpState = hpPct <= 25 ? 'crit' : hpPct <= 50 ? 'hurt' : '';
 
@@ -245,7 +252,7 @@ export default function CharacterSheet({ character, onPatch, readonly }: Charact
           </h1>
           <div className="sh-sub">
             Игрок: {character.playerName || '—'} · {speciesObj?.nameRu ?? '—'} · {classLabel}
-            {' '}· Уровень {level} · БМ {modifierText(prof)}
+            {' '}· Уровень {level} · БМ {signedText(prof)}
           </div>
         </div>
       </div>
@@ -276,7 +283,7 @@ export default function CharacterSheet({ character, onPatch, readonly }: Charact
         </div>
         <div className="derived-box">
           <div className="db-label">Инициатива</div>
-          <div className="db-value">{modifierText(initiative)}</div>
+          <div className="db-value">{signedText(initiative)}</div>
         </div>
         <div className="derived-box">
           <div className="db-label">Скорость</div>
@@ -299,6 +306,18 @@ export default function CharacterSheet({ character, onPatch, readonly }: Charact
           </div>
         )}
       </div>
+
+      {/* ── Ожидающий подтверждения бросок хитов ── */}
+      {character.pendingHpGain && (
+        <div className="sheet-section pending-hp">
+          <h3><Dices size={15} /> Бросок хитов: {character.pendingHpGain.roll}</h3>
+          <p className="small" style={{ margin: '0 0 6px' }}>
+            Повышение уровня: {clsById.get(character.pendingHpGain.classId)?.nameRu ?? character.pendingHpGain.classId},
+            уровень {character.pendingHpGain.level} — <b>ожидает подтверждения мастера</b>.
+            Прирост хитов будет применён после подтверждения.
+          </p>
+        </div>
+      )}
 
       {/* ── HP ── */}
       <div className="sheet-section">
@@ -374,7 +393,7 @@ export default function CharacterSheet({ character, onPatch, readonly }: Charact
                 >
                   <span className="dot" />
                   <span className="ci-name">{ABILITY_NAMES_RU[ab]}</span>
-                  <span className="ci-bonus">{modifierText(saveBonus(ab))}</span>
+                  <span className="ci-bonus">{signedText(saveBonus(ab))}</span>
                 </button>
               );
             })}
@@ -392,7 +411,7 @@ export default function CharacterSheet({ character, onPatch, readonly }: Charact
                 >
                   <span className="dot" />
                   <span className="ci-name">{SKILL_NAMES_RU[sk]}{exp ? ' ★' : ''}</span>
-                  <span className="ci-bonus">{modifierText(skillBonus(sk))}</span>
+                  <span className="ci-bonus">{signedText(skillBonus(sk))}</span>
                 </button>
               );
             })}
@@ -411,7 +430,7 @@ export default function CharacterSheet({ character, onPatch, readonly }: Charact
                 {formatFormula(atk.damageDice, atk.damageBonus)} {atk.damageType}
               </span>
               <button onClick={() => doRoll(`Атака: ${atk.name}`, '1d20', atk.attackBonus)}>
-                <Dices size={13} /> {modifierText(atk.attackBonus)}
+                <Dices size={13} /> {signedText(atk.attackBonus)}
               </button>
               <button onClick={() => doRoll(`Урон: ${atk.name}`, atk.damageDice, atk.damageBonus)}>
                 <Zap size={13} /> Урон
@@ -552,64 +571,111 @@ export default function CharacterSheet({ character, onPatch, readonly }: Charact
         </div>
       </div>
 
-      {/* ── Настройка (3 слота) ── */}
+      {/* ── Настройка на магические предметы (3 слота) ── */}
       <div className="sheet-section">
-        <h3>Настройка на магические предметы ({character.attunedItemIds.length}/3)</h3>
+        <h3><Sparkles size={15} /> Настройка на магические предметы ({character.attunedItemIds.length}/3)</h3>
+        <p className="muted small" style={{ margin: '0 0 8px' }}>
+          Персонаж может быть настроен не более чем на 3 магических предмета. Настроиться
+          можно только на экипированный предмет, требующий настройки.
+        </p>
         <div className="attune-slots">
           {[0, 1, 2].map((slot) => {
             const item = attunedItems[slot];
             return (
               <div key={slot} className={`attune-slot${item ? ' filled' : ''}`}>
-                {item ? item.nameRu : 'Пустой слот'}
-                {editable && item && (
-                  <button
-                    style={{ marginLeft: 8, padding: '0 6px', border: 'none', background: 'transparent', color: 'var(--hp-red)' }}
-                    onClick={() => patch({
-                      attunedItemIds: character.attunedItemIds.filter((id) => id !== item.id),
-                    })}
-                  >
-                    <Trash2 size={12} />
-                  </button>
+                {item ? (
+                  <>
+                    <Sparkles size={12} /> {item.nameRu}
+                    {editable && (
+                      <button
+                        title="Снять настройку"
+                        style={{ marginLeft: 8, padding: '0 6px', border: 'none', background: 'transparent', color: 'var(--hp-red)' }}
+                        onClick={() => patch({
+                          attunedItemIds: character.attunedItemIds.filter((id) => id !== item.id),
+                        })}
+                      >
+                        <Trash2 size={12} /> Снять
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  'Пустой слот'
                 )}
               </div>
             );
           })}
         </div>
         {editable && character.attunedItemIds.length < 3 && (
-          <div className="inv-add">
-            <select
-              value=""
-              onChange={(e) => {
-                const id = e.target.value;
-                if (id && !character.attunedItemIds.includes(id)) {
-                  patch({ attunedItemIds: [...character.attunedItemIds, id] });
-                }
-              }}
-            >
-              <option value="">Настроиться на предмет…</option>
-              {items
-                .filter((i) => i.requiresAttunement && !character.attunedItemIds.includes(i.id))
-                .map((i) => <option key={i.id} value={i.id}>{i.nameRu}</option>)}
-            </select>
-          </div>
+          attunableItems.length > 0 ? (
+            <div className="inv-add">
+              <select
+                value=""
+                onChange={(e) => {
+                  const id = e.target.value;
+                  if (id && !character.attunedItemIds.includes(id)) {
+                    patch({ attunedItemIds: [...character.attunedItemIds, id] });
+                  }
+                }}
+              >
+                <option value="">Настроиться на экипированный предмет…</option>
+                {attunableItems
+                  .filter((i) => !character.attunedItemIds.includes(i.id))
+                  .map((i) => <option key={i.id} value={i.id}>{i.nameRu}</option>)}
+              </select>
+            </div>
+          ) : (
+            <p className="muted small" style={{ margin: '8px 0 0' }}>
+              Нет экипированных предметов, требующих настройки.
+            </p>
+          )
         )}
       </div>
 
       {/* ── Снаряжение ── */}
       <div className="sheet-section">
         <h3>Снаряжение</h3>
+        <p className="muted small" style={{ margin: '0 0 8px' }}>
+          Руки заняты: {usedHands(character.inventory, itemById)}/2 (одноручное оружие и щит — по руке, двуручное — обе).
+        </p>
         {character.inventory.length === 0 && <p className="muted small">Пусто</p>}
         {character.inventory.map((entry) => {
           const item = itemById.get(entry.itemId);
+          const needsProf = !!item && (item.category === 'weapon' || item.category === 'armor');
+          const proficient = !needsProf || !item
+            ? true
+            : isProficientWith(character, item, clsById);
+          // Блокировка: нет владения ИЛИ не хватает рук/слота брони
+          const equipCheck = !entry.equipped && item
+            ? canEquip(item, character.inventory, itemById)
+            : { ok: true } as const;
+          const profBlocked = !entry.equipped && needsProf && !proficient;
+          const equipBlocked = profBlocked || !equipCheck.ok;
+          const blockedTitle = profBlocked
+            ? 'Нельзя экипировать: нет владения этим предметом'
+            : !equipCheck.ok
+              ? equipCheck.reason
+              : undefined;
           return (
             <div className="inv-row" key={entry.itemId}>
               <span className="inv-name">{item?.nameRu ?? entry.itemId}</span>
+              {item?.requiresAttunement && (
+                <span className={`inv-eq${character.attunedItemIds.includes(item.id) ? '' : ' dim'}`}>
+                  {character.attunedItemIds.includes(item.id) ? 'настроен' : 'требует настройки'}
+                </span>
+              )}
               {entry.equipped && <span className="inv-eq">экипировано</span>}
+              {needsProf && !proficient && (
+                <span className="inv-noprof" title="У классов персонажа нет владения этим предметом">
+                  нет владения
+                </span>
+              )}
               <span className="inv-qty">×{entry.quantity}</span>
               {editable && (
                 <>
                   <button
                     style={{ padding: '2px 8px', fontSize: 12 }}
+                    disabled={equipBlocked}
+                    title={blockedTitle}
                     onClick={() => patch({
                       inventory: character.inventory.map((e) =>
                         e.itemId === entry.itemId ? { ...e, equipped: !e.equipped } : e),

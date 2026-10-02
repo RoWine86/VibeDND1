@@ -12,6 +12,7 @@ import {
   type ClientMsg,
   type DiceLogEntry,
   type DrawStroke,
+  type Item,
   type LiveToken,
   type Role,
   type ServerMsg,
@@ -91,6 +92,15 @@ function snapshotFor(client: Client, session: SessionState): ServerMsg {
     .map((id) => db.getCharacter(id))
     .filter((ch): ch is Character => Boolean(ch));
   return { type: 'snapshot', session: filterSessionForRole(session, client.role), characters };
+}
+
+/** Для игрока БЕЗ персонажа (экран выбора): вся партия целиком, чтобы он мог
+ *  увидеть имена и выбрать себя. */
+function snapshotParty(session: SessionState): ServerMsg {
+  const characters = session.characterIds
+    .map((id) => db.getCharacter(id))
+    .filter((ch): ch is Character => Boolean(ch));
+  return { type: 'snapshot', session: filterSessionForRole(session, 'player'), characters };
 }
 
 // ─── Синхронизация HP: персонаж ↔ токен ─────────────────────────────────────
@@ -433,6 +443,13 @@ function handleMessage(client: Client, session: SessionState, msg: ClientMsg): v
       db.saveSession(session);
       return;
     }
+
+    // игрок с телефона запрашивает список предметов для инвентаря
+    case 'requestItems': {
+      const items = db.listEntities('item') as Item[];
+      sendTo(client, { type: 'items', items });
+      return;
+    }
   }
 }
 
@@ -471,18 +488,22 @@ export function attachWebSocket(server: Server): void {
           sock.close();
           return;
         }
-        if (msg.role === 'player') {
-          if (!msg.characterId || !db.getCharacter(msg.characterId)) {
-            if (sock.readyState === WebSocket.OPEN) {
-              sock.send(JSON.stringify({ type: 'error', message: 'Игрок должен указать существующего персонажа' }));
-            }
-            sock.close();
-            return;
+        if (msg.role === 'player' && msg.characterId && !db.getCharacter(msg.characterId)) {
+          // characterId указан, но персонажа нет в базе — вход невозможен
+          if (sock.readyState === WebSocket.OPEN) {
+            sock.send(JSON.stringify({ type: 'error', message: 'Персонаж не найден' }));
           }
+          sock.close();
+          return;
         }
+        // player без characterId — экран выбора персонажа: снимок с партией,
+        // без права отдавать команды (handleMessage сам отсекает лишнее)
         client = { sock, role: msg.role, sessionId: msg.sessionId, characterId: msg.characterId };
         clients.add(client);
-        sendTo(client, snapshotFor(client, session));
+        // player без characterId — экран выбора: шлём всю партию
+        sendTo(client, client.role === 'player' && !client.characterId
+          ? snapshotParty(session)
+          : snapshotFor(client, session));
         return;
       }
 

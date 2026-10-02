@@ -23,7 +23,7 @@ app.use('/api', uploadsRouter());
 const server = createServer(app);
 attachWebSocket(server);
 
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`VibeDND сервер: http://localhost:${PORT}`);
   console.log(`Вход по сети:   http://${lanAddress()}:${PORT}`);
 });

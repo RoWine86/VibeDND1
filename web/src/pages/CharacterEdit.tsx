@@ -3,11 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
-  ArrowLeft, ArrowUpCircle, Camera, Check, Dices,
+  ArrowLeft, ArrowUpCircle, Camera, Check, Dices, RotateCcw, ShieldCheck,
 } from 'lucide-react';
 import {
   ABILITY_NAMES_RU, abilityModifier, averageHpGain, characterLevel, effectiveScores,
-  modifierText, rollDice,
+  modifierText, signedText, rollDice,
 } from '@vibednd/shared';
 import type { Character, CharacterClass, Spell } from '@vibednd/shared';
 import { api } from '../api';
@@ -127,7 +127,10 @@ export default function CharacterEdit() {
 
   const applyLevelUp = () => {
     if (!character || !luCls) return;
-    const gain = luHpGain;
+    // Режим «бросок»: прирост хитов НЕ применяется — фиксируется бросок
+    // и ждёт подтверждения мастера (панель выше). Режим «среднее» — сразу.
+    const isPendingRoll = luHpMode === 'roll' && luRoll != null;
+    const gain = isPendingRoll ? 0 : luHpGain;
     const updatedClasses = character.classes.map((c) =>
       c.classId === luClassId
         ? {
@@ -163,8 +166,29 @@ export default function CharacterEdit() {
       spellSlotsCurrent: newCurrent,
       knownSpells: [...character.knownSpells, ...luSpells],
       preparedSpells: [...character.preparedSpells, ...luSpells],
+      pendingHpGain: isPendingRoll
+        ? { roll: luRoll ?? 0, classId: luClassId, level: newTotalLevel }
+        : null,
     });
     setLuOpen(false);
+  };
+
+  // ── Подтверждение броска хитов мастером ──
+  const pendingGain = character?.pendingHpGain
+    ? character.pendingHpGain.roll + conMod
+    : 0;
+  const confirmPendingHp = () => {
+    if (!character?.pendingHpGain) return;
+    patch({
+      maxHp: character.maxHp + pendingGain,
+      currentHp: character.currentHp + pendingGain,
+      pendingHpGain: null,
+    });
+  };
+  const resetPendingHp = () => {
+    if (!character?.pendingHpGain) return;
+    if (!window.confirm('Сбросить бросок хитов? Игрок сможет бросить кость заново.')) return;
+    patch({ pendingHpGain: null });
   };
 
   if (error && !character) {
@@ -240,6 +264,27 @@ export default function CharacterEdit() {
         </div>
       </div>
 
+      {/* ── Ожидающий подтверждения бросок хитов ── */}
+      {character.pendingHpGain && (
+        <div className="sheet-section pending-hp">
+          <h3><ShieldCheck size={15} /> Бросок хитов ожидает подтверждения мастера</h3>
+          <p className="small" style={{ margin: '0 0 10px' }}>
+            Повышение уровня ({clsById.get(character.pendingHpGain.classId)?.nameRu ?? character.pendingHpGain.classId},
+            общий уровень {character.pendingHpGain.level}) уже применено, но бросок кости хитов
+            ({character.pendingHpGain.roll} + {conMod} ТЕЛ = <b>+{pendingGain} хитов</b>) ещё не подтверждён —
+            хиты не начислены. Переброс возможен только после сброса мастером.
+          </p>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button className="primary" onClick={confirmPendingHp}>
+              <Check size={15} /> Подтвердить бросок (+{pendingGain} хитов)
+            </button>
+            <button className="danger" onClick={resetPendingHp}>
+              <RotateCcw size={14} /> Сбросить бросок
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ── Повышение уровня ── */}
       {!luOpen ? (
         <div className="rest-bar">
@@ -273,7 +318,7 @@ export default function CharacterEdit() {
           {luCls && (
             <>
               <div className="form-field" style={{ marginBottom: 14 }}>
-                <label>Прирост хитов (кость к{luCls.hitDie} + Телосложение {modifierText(conMod)})</label>
+                <label>Прирост хитов (кость к{luCls.hitDie} + Телосложение {signedText(conMod)})</label>
                 <div className="mode-switch" style={{ marginBottom: 8 }}>
                   <button
                     className={luHpMode === 'avg' ? 'active' : ''}
@@ -289,16 +334,23 @@ export default function CharacterEdit() {
                   </button>
                 </div>
                 {luHpMode === 'roll' && (
-                  <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                    <button onClick={() => setLuRoll(rollDice(`1d${luCls.hitDie}`).total)}>
-                      <Dices size={14} style={{ verticalAlign: -2 }} /> Бросить
-                    </button>
-                    {luRoll != null && (
-                      <span key={luRoll} className="roll-result anim-dice-pop" style={{ marginTop: 0 }}>
-                        <span className="rr-total">{luRoll}</span>
-                        <span className="rr-detail">+ {conMod} ТЕЛ = {luRoll + conMod}</span>
-                      </span>
-                    )}
+                  <div>
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                      <button onClick={() => setLuRoll(rollDice(`1d${luCls.hitDie}`).total)}>
+                        <Dices size={14} style={{ verticalAlign: -2 }} /> Бросить
+                      </button>
+                      {luRoll != null && (
+                        <span key={luRoll} className="roll-result anim-dice-pop" style={{ marginTop: 0 }}>
+                          <span className="rr-total">{luRoll}</span>
+                          <span className="rr-detail">+ {conMod} ТЕЛ = {luRoll + conMod}</span>
+                        </span>
+                      )}
+                    </div>
+                    <p className="muted small" style={{ margin: '8px 0 0' }}>
+                      Кость бросается один раз. Результат фиксируется и помечается «ожидает
+                      подтверждения мастера»: прирост хитов будет применён после подтверждения,
+                      переброс — только через сброс мастером.
+                    </p>
                   </div>
                 )}
               </div>
@@ -349,7 +401,9 @@ export default function CharacterEdit() {
                   disabled={luHpMode === 'roll' && luRoll == null}
                   onClick={applyLevelUp}
                 >
-                  <Check size={15} /> Применить (+{luHpGain} хитов)
+                  <Check size={15} /> {luHpMode === 'roll'
+                    ? `Применить (бросок ${luRoll ?? '—'} ждёт мастера)`
+                    : `Применить (+${luHpGain} хитов)`}
                 </button>
                 <button onClick={() => setLuOpen(false)}>Отмена</button>
               </div>

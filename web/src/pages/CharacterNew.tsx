@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, Check, Dices, Minus, Plus } from 'lucide-react';
 import {
   ABILITIES, ABILITY_NAMES_RU, POINT_BUY_BUDGET, POINT_BUY_COSTS, STANDARD_ARRAY,
-  abilityModifier, effectiveScores, firstLevelHp, modifierText, pointBuySpent,
+  abilityModifier, effectiveScores, firstLevelHp, modifierText, signedText, pointBuySpent,
   proficiencyBonus,
 } from '@vibednd/shared';
 import type {
@@ -180,6 +180,22 @@ export default function CharacterNew() {
     if (!refs || !cls?.spellcastingAbility) return [];
     return refs.spells.filter((sp2) => sp2.classes.includes(cls.id) && sp2.level <= 1);
   }, [refs, cls]);
+
+  // Лимиты заклинаний 1 уровня по классу (D&D 2024): [заговоры, заклинания 1 ур.]
+  const cantripLimit = cls?.spellsKnownAt1?.[0] ?? null;
+  const level1Limit = cls?.spellsKnownAt1?.[1] ?? null;
+  const cantripsChosen = chosenSpells.filter((id) =>
+    refs?.spells.find((s) => s.id === id)?.level === 0).length;
+  const level1Chosen = chosenSpells.length - cantripsChosen;
+
+  /** Блокировка кнопки заклинания: выбрано достаточно его типа. */
+  const spellBlocked = (spellId: string): boolean => {
+    if (chosenSpells.includes(spellId)) return false; // снять выбор можно всегда
+    const sp = refs?.spells.find((s) => s.id === spellId);
+    if (!sp) return false;
+    if (sp.level === 0) return cantripLimit !== null && cantripsChosen >= cantripLimit;
+    return level1Limit !== null && level1Chosen >= level1Limit;
+  };
 
   const submit = async () => {
     if (!previewChar) return;
@@ -503,18 +519,27 @@ export default function CharacterNew() {
             {isCaster && cls && (
               <>
                 <h3 style={{ fontSize: 15, marginBottom: 8 }}>
-                  Заговоры и заклинания 1 уровня ({chosenSpells.length} выбрано)
+                  Заговоры и заклинания 1 уровня
                 </h3>
                 <p className="wiz-hint">
                   Базовая характеристика заклинаний: {ABILITY_NAMES_RU[cls.spellcastingAbility!]}.
+                  {cantripLimit !== null && cantripLimit > 0 && (
+                    <> Заговоры: выбрано {cantripsChosen} из {cantripLimit}.</>
+                  )}
+                  {level1Limit !== null && (
+                    <> Заклинания 1 уровня: выбрано {level1Chosen} из {level1Limit}.</>
+                  )}
                 </p>
                 <div className="spell-list">
                   {availableSpells.map((sp2) => {
                     const on = chosenSpells.includes(sp2.id);
+                    const blocked = !on && spellBlocked(sp2.id);
                     return (
                       <button
                         key={sp2.id}
-                        className={`spell-row${on ? ' selected' : ''}`}
+                        className={`spell-row${on ? ' selected' : ''}${blocked ? ' blocked' : ''}`}
+                        disabled={blocked}
+                        title={blocked ? 'Лимит этого типа заклинаний исчерпан — снимите что-то другое' : undefined}
                         onClick={() =>
                           setChosenSpells((prev) =>
                             on ? prev.filter((x) => x !== sp2.id) : [...prev, sp2.id])
@@ -559,7 +584,7 @@ export default function CharacterNew() {
               <div className="kv"><span>Хиты (к{cls?.hitDie} + Телосложение)</span><span>{hpPreview}</span></div>
               <div className="kv"><span>КД (без доспеха)</span><span>{acPreview}</span></div>
               <div className="kv"><span>Пассивное восприятие</span><span>{passivePerception}</span></div>
-              <div className="kv"><span>Инициатива</span><span>{modifierText(abilityModifier(effScores.dex))}</span></div>
+              <div className="kv"><span>Инициатива</span><span>{signedText(abilityModifier(effScores.dex))}</span></div>
             </div>
             <div className="summary-block">
               <h3>Характеристики (с бонусами предыстории)</h3>
