@@ -19,6 +19,10 @@ import '../styles/map.css';
 
 type EcLevel = 0 | 1 | 2 | 3; // L M Q H
 
+// Биты формата для уровней ECC (ISO/IEC 18004, таблица C.2): L=001, M=000,
+// Q=011, H=010. Без этой подмены сканер не читает формат-строку и бракует код.
+const FORMAT_ECL_BITS: Record<EcLevel, number> = { 0: 1, 1: 0, 2: 3, 3: 2 };
+
 // Число кодов ECC на блок и группы блоков [кол-во блоков, байт данных в блоке]
 // для версий 1–10 (ISO/IEC 18004, таблица 9). Сверено с RS_BLOCK_TABLE
 // библиотеки python-qrcode (qrcode/base.py): все 40 строк совпадают по
@@ -49,9 +53,15 @@ const ECC_TABLE: Record<EcLevel, { ec: number; g1: [number, number]; g2: [number
     { ec: 17, g1: [1, 9], g2: [0, 0] }, { ec: 28, g1: [1, 16], g2: [0, 0] },
     { ec: 22, g1: [2, 13], g2: [0, 0] }, { ec: 16, g1: [4, 9], g2: [0, 0] },
     { ec: 22, g1: [2, 11], g2: [2, 12] }, { ec: 28, g1: [4, 15], g2: [0, 0] },
-    { ec: 26, g1: [3, 13], g2: [1, 14] }, { ec: 26, g1: [3, 14], g2: [2, 15] },
+    { ec: 26, g1: [4, 13], g2: [1, 14] }, { ec: 26, g1: [4, 14], g2: [2, 15] },
     { ec: 24, g1: [4, 12], g2: [4, 13] }, { ec: 28, g1: [6, 15], g2: [2, 16] },
   ],
+};
+
+// Центры паттернов выравнивания для версий 2–6 (ISO/IEC 18004, таблица E.1).
+// Для 7+ центры выводятся формулой ниже.
+const ALIGN_COORDS: Record<number, number[]> = {
+  2: [6, 18], 3: [6, 22], 4: [6, 26], 5: [6, 30], 6: [6, 34],
 };
 
 interface QrCode {
@@ -189,14 +199,17 @@ function qrCompute(text: string, ecl: EcLevel, version: number): QrCode {
   finder(size - 4, 3);
   finder(3, size - 4);
 
-  // паттерны выравнивания (версии 2+): центры из координат
+  // паттерны выравнивания (версии 2+): центры из таблицы или формулы
   if (version >= 2) {
-    const numAlign = Math.floor(version / 7) + 2;
-    const step = version === 32
-      ? 26
-      : Math.ceil((version * 4 + 4) / (numAlign * 2 - 2)) * 2;
-    const coords: number[] = [6];
-    for (let i = numAlign - 1; i >= 1; i--) coords.push(size - 7 - (i - 1) * step);
+    let coords: number[];
+    if (ALIGN_COORDS[version]) {
+      coords = ALIGN_COORDS[version]!;
+    } else {
+      const numAlign = Math.floor(version / 7) + 2;
+      const step = Math.ceil((version * 4 + 4) / (numAlign * 2 - 2)) * 2;
+      coords = [6];
+      for (let i = numAlign - 1; i >= 1; i--) coords.push(size - 7 - (i - 1) * step);
+    }
     for (const cy of coords) {
       for (const cx of coords) {
         // пропускаем углы, занятые паттернами поиска
@@ -226,11 +239,14 @@ function qrCompute(text: string, ecl: EcLevel, version: number): QrCode {
     set(size - 1 - i, 8, false, true);
     set(8, size - 1 - i, false, true);
   }
-  // зарезервировать области версии (версии 7+)
+  // зарезервировать области версии (версии 7+): те же координаты, что и при
+  // записи значения ниже, иначе данные затирают версию и оставляют дыры в коде
   if (version >= 7) {
     for (let i = 0; i < 18; i++) {
-      set(Math.floor(i / 3) + size - 11, i % 3, false, true);
-      set(i % 3, Math.floor(i / 3) + size - 11, false, true);
+      const a = Math.floor(i / 3);
+      const b = i % 3;
+      set(size - 11 + b, a, false, true);
+      set(a, size - 11 + b, false, true);
     }
   }
   // данные зигзагом справа налево
@@ -259,7 +275,7 @@ function qrCompute(text: string, ecl: EcLevel, version: number): QrCode {
     }
   }
   // формат: ecl + маска 0, БЧХ(15,5)
-  const fmtData = (ecl << 3) | 0;
+  const fmtData = (FORMAT_ECL_BITS[ecl] << 3) | 0;
   let rem = fmtData;
   for (let i = 0; i < 10; i++) rem = (rem << 1) ^ ((rem >>> 9) * 0x537);
   const fmt = (((fmtData << 10) | rem) ^ 0x5412) & 0x7fff;
@@ -272,17 +288,19 @@ function qrCompute(text: string, ecl: EcLevel, version: number): QrCode {
   for (let i = 0; i < 8; i++) set(size - 1 - i, 8, fmtBit(i), true);
   for (let i = 8; i < 15; i++) set(8, size - 15 + i, fmtBit(i), true);
   set(8, size - 8, true, true);
-  // информация о версии (версии 7+): БЧХ(18,6)
+  // информация о версии (версии 7+): БЧХ(18,6). Бит i → (строка i/3, столбец i%3)
+  // в блоке у правого нижнего угла и его транспонированная копия (Nayuki,
+  // addVersionInformation): при записи по столбцам сканер не читает версию.
   if (version >= 7) {
     let vrem = version;
     for (let i = 0; i < 12; i++) vrem = (vrem << 1) ^ ((vrem >>> 11) * 0x1f25);
     const vbits = (version << 12) | vrem;
     for (let i = 0; i < 18; i++) {
       const dark = ((vbits >>> i) & 1) === 1;
-      const a = Math.floor(i / 3) + size - 11;
+      const a = Math.floor(i / 3);
       const b = i % 3;
-      set(a, b, dark, true);
-      set(b, a, dark, true);
+      set(size - 11 + b, a, dark, true);
+      set(a, size - 11 + b, dark, true);
     }
   }
   return { size, modules };

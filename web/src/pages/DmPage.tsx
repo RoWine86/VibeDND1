@@ -418,6 +418,23 @@ export default function DmPage() {
       </div>
 
       <aside className="dm-panel">
+        {/* Ошибка подключения (например, сохранённая сессия удалена) */}
+        {loadError && (
+          <div className="error-box" style={{ margin: '12px 14px 0' }}>
+            {loadError}
+            <button
+              className="dm-btn"
+              style={{ marginTop: 8 }}
+              onClick={() => {
+                setPickedId('');
+                localStorage.removeItem('vibednd.dmSession');
+                setLoadError('');
+              }}
+            >
+              Выбрать другую сессию
+            </button>
+          </div>
+        )}
         {/* Шапка: сессия и активная карта */}
         <div className="dm-section">
           <div className="dm-session-head">
