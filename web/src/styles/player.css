@@ -202,6 +202,8 @@
 .player-spell-head:hover { background: none; color: var(--gold-bright); }
 .player-spell-body { padding: 0 0 12px; font-size: 14px; }
 .player-spell-body p { margin-bottom: 8px; }
+.player-spell-body > button { margin-top: 10px; }
+.player-spell-body .spell-view-desc { margin-top: 10px; }
 
 /* ── Инвентарь ── */
 

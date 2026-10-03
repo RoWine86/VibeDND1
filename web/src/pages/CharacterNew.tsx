@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, ArrowRight, Check, Dices, Minus, Plus } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, Dices, Eye, Minus, Plus } from 'lucide-react';
 import {
   ABILITIES, ABILITY_NAMES_RU, POINT_BUY_BUDGET, POINT_BUY_COSTS, STANDARD_ARRAY,
   abilityModifier, effectiveScores, firstLevelHp, modifierText, signedText, pointBuySpent,
@@ -13,6 +13,7 @@ import type {
   SkillKey, Species, Spell,
 } from '@vibednd/shared';
 import { api } from '../api';
+import SpellCard from '../components/SpellCard';
 import '../styles/wizard.css';
 
 const STEP_NAMES = ['Имя', 'Вид', 'Класс', 'Предыстория', 'Характеристики', 'Снаряжение', 'Итог'];
@@ -50,6 +51,7 @@ export default function CharacterNew() {
   // Шаг 6
   const [chosenSpells, setChosenSpells] = useState<string[]>([]);
   const [gearChoice, setGearChoice] = useState<'equipment' | 'gold'>('equipment');
+  const [viewSpell, setViewSpell] = useState<Spell | null>(null);
 
   useEffect(() => {
     Promise.all([
@@ -535,22 +537,33 @@ export default function CharacterNew() {
                     const on = chosenSpells.includes(sp2.id);
                     const blocked = !on && spellBlocked(sp2.id);
                     return (
-                      <button
+                      <div
                         key={sp2.id}
                         className={`spell-row${on ? ' selected' : ''}${blocked ? ' blocked' : ''}`}
-                        disabled={blocked}
                         title={blocked ? 'Лимит этого типа заклинаний исчерпан — снимите что-то другое' : undefined}
-                        onClick={() =>
-                          setChosenSpells((prev) =>
-                            on ? prev.filter((x) => x !== sp2.id) : [...prev, sp2.id])
-                        }
                       >
-                        <span className="sname">{sp2.nameRu}</span>
-                        <span className="smeta">
-                          {sp2.level === 0 ? 'Заговор' : `${sp2.level} ур.`} · {sp2.castingTime}
-                          {sp2.concentration ? ' · конц.' : ''}
-                        </span>
-                      </button>
+                        <button
+                          className="sr-pick"
+                          disabled={blocked}
+                          onClick={() =>
+                            setChosenSpells((prev) =>
+                              on ? prev.filter((x) => x !== sp2.id) : [...prev, sp2.id])
+                          }
+                        >
+                          <span className="sname">{sp2.nameRu}</span>
+                          <span className="smeta">
+                            {sp2.level === 0 ? 'Заговор' : `${sp2.level} ур.`} · {sp2.castingTime}
+                            {sp2.concentration ? ' · конц.' : ''}
+                          </span>
+                        </button>
+                        <button
+                          className="spell-peek"
+                          title="Показать заклинание"
+                          onClick={() => setViewSpell(sp2)}
+                        >
+                          <Eye size={13} />
+                        </button>
+                      </div>
                     );
                   })}
                   {availableSpells.length === 0 && (
@@ -598,11 +611,18 @@ export default function CharacterNew() {
             {chosenSpells.length > 0 && (
               <div className="summary-block">
                 <h3>Заклинания</h3>
-                <p className="small">
-                  {chosenSpells
-                    .map((id) => refs.spells.find((x) => x.id === id)?.nameRu ?? id)
-                    .join(', ')}
-                </p>
+                <div className="spell-summary">
+                  {chosenSpells.map((id) => {
+                    const sp3 = refs.spells.find((x) => x.id === id);
+                    return sp3 ? (
+                      <button key={id} className="spell-peek" onClick={() => setViewSpell(sp3)}>
+                        {sp3.nameRu}
+                      </button>
+                    ) : (
+                      <span key={id} className="small">{id}</span>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </>
@@ -631,6 +651,8 @@ export default function CharacterNew() {
           </button>
         )}
       </div>
+
+      {viewSpell && <SpellCard spell={viewSpell} onClose={() => setViewSpell(null)} />}
     </div>
   );
 }

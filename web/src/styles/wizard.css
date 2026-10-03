@@ -81,7 +81,8 @@
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
 .form-field { display: flex; flex-direction: column; gap: 6px; }
 .form-field label { font-size: 13px; color: var(--text-dim); }
-.form-field input, .form-field select, .form-field textarea { width: 100%; }
+.form-field input:not([type='checkbox']):not([type='radio']),
+.form-field select, .form-field textarea { width: 100%; }
 
 .mode-switch { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
 .mode-switch button.active { border-color: var(--gold); color: var(--gold-bright); }
@@ -135,8 +136,22 @@
 }
 .spell-row.selected { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold); }
 .spell-row.blocked { opacity: 0.45; cursor: not-allowed; }
+.spell-row .sr-pick {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: none;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+  color: inherit;
+}
 .spell-row .sname { flex: 1; }
 .spell-row .smeta { color: var(--text-dim); font-size: 12px; white-space: nowrap; }
+
+.spell-summary { display: flex; flex-wrap: wrap; gap: 4px 10px; }
 
 .check-line {
   display: flex;

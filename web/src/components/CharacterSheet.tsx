@@ -16,6 +16,7 @@ import type {
   SkillKey, Species, Spell,
 } from '@vibednd/shared';
 import { api } from '../api';
+import SpellCard from './SpellCard';
 import '../styles/character.css';
 
 export interface CharacterSheetProps {
@@ -47,6 +48,7 @@ export default function CharacterSheet({ character, onPatch, readonly }: Charact
   const [hpPulseKey, setHpPulseKey] = useState(0);
   const [invItemId, setInvItemId] = useState('');
   const [invQty, setInvQty] = useState(1);
+  const [viewSpell, setViewSpell] = useState<Spell | null>(null);
   const prevHp = useRef(character.currentHp);
 
   useEffect(() => {
@@ -484,7 +486,13 @@ export default function CharacterSheet({ character, onPatch, readonly }: Charact
               const isConc = character.concentratingOn === id;
               return (
                 <span key={id} className={`spell-tag${isConc ? ' conc' : ''}`}>
-                  {sp?.nameRu ?? id}
+                  {sp ? (
+                    <button className="st-name" title="Показать заклинание" onClick={() => setViewSpell(sp)}>
+                      {sp.nameRu}
+                    </button>
+                  ) : (
+                    id
+                  )}
                   {sp && <span className="st-lvl">{sp.level === 0 ? 'заговор' : `${sp.level} ур.`}</span>}
                   {editable && sp?.concentration && !isConc && (
                     <button
@@ -800,7 +808,9 @@ export default function CharacterSheet({ character, onPatch, readonly }: Charact
                 </div>
                 <ul className="small muted" style={{ paddingLeft: 18 }}>
                   {feats.map((f) => (
-                    <li key={`${f.level}-${f.name}`}>{f.level} ур. — {f.name}</li>
+                    <li key={`${f.level}-${f.name}`}>
+                      <FeatureLine level={f.level} name={f.name} description={f.description} />
+                    </li>
                   ))}
                   {feats.length === 0 && <li>Нет данных об умениях</li>}
                 </ul>
@@ -809,6 +819,29 @@ export default function CharacterSheet({ character, onPatch, readonly }: Charact
           })}
         </div>
       )}
+
+      {viewSpell && <SpellCard spell={viewSpell} onClose={() => setViewSpell(null)} />}
     </div>
+  );
+}
+
+// ─── Умение класса: название + раскрытие описания по клику ──────────────────
+
+function FeatureLine({ level, name, description }: { level: number; name: string; description: string }) {
+  const [open, setOpen] = useState(false);
+  const hasDesc = description.trim().length > 0;
+  return (
+    <>
+      {hasDesc ? (
+        <button className="feature-toggle" onClick={() => setOpen((v) => !v)}>
+          {level} ур. — {name} <span className="feature-caret">{open ? '▾' : '▸'}</span>
+        </button>
+      ) : (
+        <>{level} ур. — {name}</>
+      )}
+      {open && hasDesc && (
+        <div className="feature-desc anim-fade-in">{description}</div>
+      )}
+    </>
   );
 }

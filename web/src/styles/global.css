@@ -82,6 +82,18 @@ input:focus, select:focus, textarea:focus {
   border-color: var(--gold);
 }
 
+/* Чекбоксы и радио: общий input-стиль (padding, рамка, width:100%) их
+   раздувает — возвращаем компактный нативный вид. */
+input[type='checkbox'], input[type='radio'] {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  margin: 0;
+  accent-color: var(--gold);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
 /* ─── Анимации (чистый CSS) ─────────────────────────────────────────────── */
 
 @keyframes fade-in {
@@ -171,6 +183,62 @@ button svg { vertical-align: -2px; }
 }
 .modal h2 { margin-bottom: 14px; font-size: 20px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+
+/* ─── Карточка заклинания (просмотр) ─────────────────────────────────────── */
+
+.spell-card-modal { width: 520px; position: relative; max-height: 88vh; overflow-y: auto; }
+.spell-card-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  padding: 4px;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  line-height: 0;
+}
+.spell-card-close:hover { color: var(--text); background: transparent; }
+
+.spell-view-head { margin-bottom: 14px; padding-right: 28px; }
+.spell-view-name { font-family: var(--font-display); color: var(--gold); font-size: 22px; line-height: 1.25; }
+.spell-view-en { color: var(--text-dim); font-size: 14px; font-style: italic; }
+.spell-view-sub { color: var(--gold-bright); font-size: 14px; margin-top: 4px; }
+
+.spell-view-kv {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  font-size: 14px;
+  padding: 12px 14px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.spell-view-kv .k { color: var(--text-dim); }
+.spell-view-badges { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+.spell-badge {
+  font-size: 12px;
+  color: var(--gold-bright);
+  border: 1px solid var(--gold);
+  border-radius: 999px;
+  padding: 2px 10px;
+}
+.spell-view-desc { margin-top: 12px; white-space: pre-line; line-height: 1.6; }
+.spell-view-classes { margin-top: 12px; color: var(--text-dim); font-size: 13px; }
+.spell-card-footer { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
+
+/* Кнопка «показать заклинание» в строках списков */
+.spell-peek {
+  padding: 2px 8px;
+  font-size: 12px;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.spell-peek:hover { color: var(--gold-bright); background: transparent; }
 
 .form-field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 10px; }
 .form-field label { color: var(--text-dim); font-size: 13px; }

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
-  ArrowLeft, ArrowUpCircle, Camera, Check, Dices, RotateCcw, ShieldCheck,
+  ArrowLeft, ArrowUpCircle, Camera, Check, Dices, Eye, RotateCcw, ShieldCheck,
 } from 'lucide-react';
 import {
   ABILITY_NAMES_RU, abilityModifier, averageHpGain, characterLevel, effectiveScores,
@@ -12,6 +12,7 @@ import {
 import type { Character, CharacterClass, Spell } from '@vibednd/shared';
 import { api } from '../api';
 import CharacterSheet from '../components/CharacterSheet';
+import SpellCard from '../components/SpellCard';
 import '../styles/wizard.css';
 import '../styles/character.css';
 
@@ -34,6 +35,7 @@ export default function CharacterEdit() {
   const [luHpMode, setLuHpMode] = useState<'roll' | 'avg'>('avg');
   const [luRoll, setLuRoll] = useState<number | null>(null);
   const [luSpells, setLuSpells] = useState<string[]>([]);
+  const [viewSpell, setViewSpell] = useState<Spell | null>(null);
 
   // Автосохранение с задержкой после любого изменения (только после загрузки)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -376,19 +378,27 @@ export default function CharacterEdit() {
                     {luAvailableSpells.map((s) => {
                       const on = luSpells.includes(s.id);
                       return (
-                        <button
-                          key={s.id}
-                          className={`spell-row${on ? ' selected' : ''}`}
-                          onClick={() =>
-                            setLuSpells((prev) =>
-                              on ? prev.filter((x) => x !== s.id) : [...prev, s.id])
-                          }
-                        >
-                          <span className="sname">{s.nameRu}</span>
-                          <span className="smeta">
-                            {s.level === 0 ? 'Заговор' : `${s.level} ур.`} · {s.castingTime}
-                          </span>
-                        </button>
+                        <div key={s.id} className={`spell-row${on ? ' selected' : ''}`}>
+                          <button
+                            className="sr-pick"
+                            onClick={() =>
+                              setLuSpells((prev) =>
+                                on ? prev.filter((x) => x !== s.id) : [...prev, s.id])
+                            }
+                          >
+                            <span className="sname">{s.nameRu}</span>
+                            <span className="smeta">
+                              {s.level === 0 ? 'Заговор' : `${s.level} ур.`} · {s.castingTime}
+                            </span>
+                          </button>
+                          <button
+                            className="spell-peek"
+                            title="Показать заклинание"
+                            onClick={() => setViewSpell(s)}
+                          >
+                            <Eye size={13} />
+                          </button>
+                        </div>
                       );
                     })}
                   </div>
@@ -414,6 +424,8 @@ export default function CharacterEdit() {
 
       {/* ── Полная карточка с трекингом ── */}
       <CharacterSheet character={character} onPatch={patch} />
+
+      {viewSpell && <SpellCard spell={viewSpell} onClose={() => setViewSpell(null)} />}
     </div>
   );
 }

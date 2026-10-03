@@ -282,6 +282,28 @@ button.check-item:hover { background: var(--bg-raised); }
   align-items: center;
 }
 .spell-tag button:hover { color: var(--hp-red); background: transparent; }
+.spell-tag button.st-name { color: inherit; font-size: inherit; }
+.spell-tag button.st-name:hover { color: var(--gold-bright); text-decoration: underline; }
+
+.feature-toggle {
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: inherit;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+.feature-toggle:hover { color: var(--gold-bright); background: transparent; }
+.feature-caret { color: var(--gold); }
+.feature-desc {
+  color: var(--text);
+  opacity: 0.85;
+  margin: 2px 0 6px;
+  padding-left: 10px;
+  border-left: 2px solid var(--border);
+  white-space: pre-line;
+}
 
 /* ─── Ресурсы, состояния, отдых ──────────────────────────────────────────── */
 

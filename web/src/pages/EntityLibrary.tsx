@@ -4,12 +4,14 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, BookOpen, Package, PawPrint, Pencil, Plus, Search, Sparkles, Trash2 } from 'lucide-react';
-import type { Item, Monster, Spell, SpellSchool } from '@vibednd/shared';
+import { ArrowLeft, BookOpen, Eye, Package, PawPrint, Pencil, Plus, Search, Sparkles, Trash2 } from 'lucide-react';
+import type { CharacterClass, Item, Monster, Spell } from '@vibednd/shared';
 import { api } from '../api';
 import MonsterEditor from '../components/editors/MonsterEditor';
 import SpellEditor from '../components/editors/SpellEditor';
 import ItemEditor from '../components/editors/ItemEditor';
+import SpellCard from '../components/SpellCard';
+import { SPELL_SCHOOL_NAMES_RU } from '../components/SpellDetails';
 
 type Kind = 'monster' | 'spell' | 'item';
 type AnyEntity = Monster | Spell | Item;
@@ -23,16 +25,7 @@ const KIND_META: Record<
   item: { title: 'Предметы', plural: 'предметов', createLabel: 'Новый предмет', Icon: Package },
 };
 
-const SPELL_SCHOOL_RU: Record<SpellSchool, string> = {
-  abjuration: 'Ограждение',
-  conjuration: 'Вызов',
-  divination: 'Прорицание',
-  enchantment: 'Очарование',
-  evocation: 'Воплощение',
-  illusion: 'Иллюзия',
-  necromancy: 'Некромантия',
-  transmutation: 'Преобразование',
-};
+const SPELL_SCHOOL_RU = SPELL_SCHOOL_NAMES_RU;
 
 const ITEM_CATEGORY_RU: Record<Item['category'], string> = {
   weapon: 'Оружие',
@@ -73,10 +66,12 @@ export default function EntityLibrary() {
   const kind: Kind = isKind(params.kind) ? params.kind : 'monster';
 
   const [entities, setEntities] = useState<AnyEntity[]>([]);
+  const [classes, setClasses] = useState<CharacterClass[]>([]);
   const [query, setQuery] = useState('');
   const [error, setError] = useState('');
   const [editing, setEditing] = useState<AnyEntity | null>(null);
   const [creating, setCreating] = useState(false);
+  const [viewing, setViewing] = useState<Spell | null>(null);
 
   const load = useCallback(() => {
     api
@@ -94,6 +89,10 @@ export default function EntityLibrary() {
     setCreating(false);
     load();
   }, [load]);
+
+  useEffect(() => {
+    api.get<CharacterClass[]>('/entities/class').then(setClasses).catch(() => setClasses([]));
+  }, []);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -211,6 +210,11 @@ export default function EntityLibrary() {
                   <div className="card-sub">{entitySubtitle(kind, e)}</div>
                 </div>
                 <div className="card-actions">
+                  {kind === 'spell' && (
+                    <button onClick={() => setViewing(e as Spell)}>
+                      <Eye size={13} /> Просмотр
+                    </button>
+                  )}
                   <button
                     onClick={() => {
                       setCreating(false);
@@ -227,6 +231,14 @@ export default function EntityLibrary() {
             ))}
           </div>
         </>
+      )}
+
+      {viewing && (
+        <SpellCard
+          spell={viewing}
+          classNames={viewing.classes.map((id) => classes.find((c) => c.id === id)?.nameRu ?? id)}
+          onClose={() => setViewing(null)}
+        />
       )}
     </div>
   );

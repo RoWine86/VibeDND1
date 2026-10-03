@@ -19,6 +19,7 @@ import type {
 } from '@vibednd/shared';
 import { api } from '../api';
 import { SessionSocket } from '../ws';
+import SpellDetails from '../components/SpellDetails';
 import '../styles/player.css';
 
 type Tab = 'sheet' | 'combat' | 'spells' | 'inventory' | 'party';
@@ -573,11 +574,7 @@ function SpellRow({ spell, atk, onCast }: { spell: Spell; atk: number; onCast: (
       </button>
       {open && (
         <div className="player-spell-body anim-fade-in">
-          <p className="player-dim">
-            {spell.range} · {spell.components} · {spell.duration}
-            {spell.concentration ? ' · конц.' : ''}{spell.ritual ? ' · ритуал' : ''}
-          </p>
-          <p>{spell.description}</p>
+          <SpellDetails spell={spell} showHeader={false} />
           <button onClick={() => onCast(`Заклинание: ${spell.nameRu}`, `1d20${atk >= 0 ? '+' : ''}${atk}`)}>
             <Zap size={13} /> Сотворить (атака {atk >= 0 ? `+${atk}` : atk})
           </button>
