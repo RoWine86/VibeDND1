@@ -77,9 +77,19 @@ export interface CharacterClass {
   primaryAbilities: Ability[];
   savingThrows: Ability[];
   spellcastingAbility?: Ability;
+  // Лимиты известных заклинаний на 1 уровне: [заговоры, заклинания 1 ур.].
+  // Без поля — лимитов нет.
+  spellsKnownAt1?: [number, number];
   features: ClassLevelFeature[];
   spellSlotsByLevel?: Record<number, number[]>; // уровень персонажа → ячейки [ур1, ур2, ...]
   subclassLevel: number;
+  // Владение снаряжением (D&D 2024). Необязательно: если поле отсутствует,
+  // профили владения выводятся по id класса (см. rules.ts).
+  weaponProficiencies?: {
+    categories: WeaponCategory[]; // категории оружия
+    itemIds: string[];            // конкретные предметы сверх категорий
+  };
+  armorProficiencies?: ArmorProficiency[]; // типы брони и щиты
 }
 
 export interface Background {
@@ -113,6 +123,9 @@ export interface Spell {
   classes: string[]; // id классов
 }
 
+export type WeaponCategory = 'simple' | 'martial';
+export type ArmorProficiency = 'light' | 'medium' | 'heavy' | 'shield';
+
 export interface Item {
   id: string;
   nameRu: string;
@@ -126,11 +139,16 @@ export interface Item {
   damageType?: string;
   weaponAbility?: Ability; // обычно str/dex
   properties?: string[];
+  weaponCategory?: WeaponCategory; // simple/martial; выводится из id, если не задано
   // для брони:
   armorClassBase?: number;
   addDexToAC?: boolean;
   maxDexBonus?: number;
+  armorType?: 'light' | 'medium' | 'heavy'; // выводится из armorClassBase, если не задано (щит = id 'shield')
+  isShield?: boolean; // щит: определяется по id 'shield', если не задано
+  magic?: boolean; // магический предмет (может требовать настройки)
   requiresAttunement?: boolean;
+  rarity?: 'common' | 'uncommon' | 'rare' | 'very-rare' | 'legendary' | 'artifact';
 }
 
 export interface AttackEntry {
@@ -207,6 +225,9 @@ export interface Character {
   hitDiceTotal: number;
   hitDiceCurrent: number;
   hitDieType: number;
+  // Бросок кости хитов при повышении уровня, ждущий подтверждения мастера.
+  // Пока не null — прирост НЕ применён; переброс возможен только после сброса мастером.
+  pendingHpGain?: { roll: number; classId: string; level: number } | null;
 
   spellSlotsMax: number[]; // по уровням 1..9
   spellSlotsCurrent: number[];
@@ -228,7 +249,7 @@ export interface Character {
 }
 
 export function characterLevel(ch: Character): number {
-  return ch.classes.reduce((sum, c) => sum + c.level, 0);
+  return (ch.classes ?? []).reduce((sum, c) => sum + c.level, 0);
 }
 
 // ─── Приключение ────────────────────────────────────────────────────────────

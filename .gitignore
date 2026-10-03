@@ -1,5 +1,11 @@
 node_modules/
 dist/
 data/
+.claude/
+# Локальная база и загруженные файлы (seed-JSON остаются в репозитории)
+server/data/*.db
+server/data/*.db-shm
+server/data/*.db-wal
+server/data/uploads/
 *.local
 .DS_Store

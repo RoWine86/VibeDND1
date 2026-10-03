@@ -4,7 +4,7 @@
 // соответствующее ServerMsg всем подключённым клиентам сессии.
 
 import type {
-  Character, ConditionKey, DiceLogEntry, DrawStroke, FogShape,
+  Character, ConditionKey, DiceLogEntry, DrawStroke, FogShape, Item,
   LiveToken, SessionState, TokenKind,
 } from './types';
 
@@ -46,7 +46,10 @@ export type ClientMsg =
 
   // персонажи в сессии
   | { type: 'sessionAddCharacter'; characterId: string }
-  | { type: 'sessionRemoveCharacter'; characterId: string };
+  | { type: 'sessionRemoveCharacter'; characterId: string }
+
+  // игрок с телефона: полный список предметов для инвентаря
+  | { type: 'requestItems' };
 
 // ─── Сервер → Клиент ────────────────────────────────────────────────────────
 
@@ -63,4 +66,6 @@ export type ServerMsg =
   | { type: 'diceLog'; entry: DiceLogEntry } // скрытые броски шлются только роли dm
   | { type: 'characterUpdated'; character: Character }
   | { type: 'activeMap'; mapId: string }
+  // ответ на requestItems (шлётся только запросившему клиенту)
+  | { type: 'items'; items: Item[] }
   | { type: 'error'; message: string };

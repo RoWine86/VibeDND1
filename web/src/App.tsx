@@ -9,6 +9,7 @@ import CharacterNew from './pages/CharacterNew';
 import AdventureLibrary from './pages/AdventureLibrary';
 import AdventureEdit from './pages/AdventureEdit';
 import SessionPage from './pages/SessionPage';
+import EntityLibrary from './pages/EntityLibrary';
 
 export default function App() {
   return (
@@ -16,12 +17,13 @@ export default function App() {
       <Route path="/" element={<Lobby />} />
       <Route path="/dm" element={<DmPage />} />
       <Route path="/board/:sessionId" element={<BoardPage />} />
-      <Route path="/player/:sessionId/:characterId" element={<PlayerPage />} />
+      <Route path="/player/:sessionId/:characterId?" element={<PlayerPage />} />
       <Route path="/characters" element={<CharacterLibrary />} />
       <Route path="/characters/new" element={<CharacterNew />} />
       <Route path="/characters/:id/edit" element={<CharacterEdit />} />
       <Route path="/adventures" element={<AdventureLibrary />} />
       <Route path="/adventures/:id/edit" element={<AdventureEdit />} />
+      <Route path="/entities/:kind" element={<EntityLibrary />} />
       <Route path="/session/:id" element={<SessionPage />} />
     </Routes>
   );
