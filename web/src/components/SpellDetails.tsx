@@ -18,6 +18,31 @@ export const SPELL_SCHOOL_NAMES_RU: Record<SpellSchool, string> = {
 export const spellLevelText = (lvl: number) => (lvl === 0 ? 'Заговор' : `${lvl} уровень`);
 export const spellLevelShort = (lvl: number) => (lvl === 0 ? 'заговор' : `${lvl} ур.`);
 
+const EFFECT_TYPE_RU: Record<NonNullable<Spell['effectType']>, string> = {
+  attack: 'Атака заклинанием',
+  save: 'Спасбросок',
+  utility: 'Служебное',
+};
+
+/** Краткая сводка оцифровки боевого движка (что бросаем, какой урон). */
+export function spellCombatSummary(spell: Spell): string | null {
+  const bits: string[] = [];
+  if (spell.heals && spell.damageDice) bits.push(`Лечение ${spell.damageDice}`);
+  else if (spell.damageDice) {
+    bits.push(`${spell.damageDice}${spell.damageType ? ` ${spell.damageType}` : ''}`.trim());
+  }
+  if (spell.effectType === 'attack') bits.push(spell.autoHit ? 'автопопадание' : 'атака заклинанием');
+  if (spell.effectType === 'save' && spell.saveAbility) {
+    const AB_RU: Record<string, string> = {
+      str: 'Сил', dex: 'Лов', con: 'Тел', int: 'Инт', wis: 'Мдр', cha: 'Хар',
+    };
+    bits.push(`спас ${AB_RU[spell.saveAbility] ?? spell.saveAbility}${spell.halfOnSuccess ? ' (половина)' : ''}`);
+  }
+  if (spell.upcast) bits.push(`upcast: ${spell.upcast.perSlotLevel}`);
+  if (bits.length === 0) return spell.effectType ? EFFECT_TYPE_RU[spell.effectType] : null;
+  return bits.join(' · ');
+}
+
 export default function SpellDetails({
   spell,
   classNames,
@@ -31,6 +56,7 @@ export default function SpellDetails({
     spell.concentration ? 'Концентрация' : '',
     spell.ritual ? 'Ритуал' : '',
   ].filter(Boolean);
+  const combatSummary = spellCombatSummary(spell);
   return (
     <div className="spell-view">
       {showHeader && (
@@ -58,6 +84,9 @@ export default function SpellDetails({
             <span key={f} className="spell-badge">{f}</span>
           ))}
         </div>
+      )}
+      {combatSummary && (
+        <div className="spell-view-combat">{combatSummary}</div>
       )}
       {spell.description && <p className="spell-view-desc">{spell.description}</p>}
       {classNames && classNames.length > 0 && (

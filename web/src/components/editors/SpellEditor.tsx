@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { Save } from 'lucide-react';
-import type { CharacterClass, Spell, SpellSchool } from '@vibednd/shared';
+import type { Ability, CharacterClass, Spell, SpellSchool } from '@vibednd/shared';
+import { ABILITIES, ABILITY_NAMES_RU } from '@vibednd/shared';
 import { api } from '../../api';
 
 const SCHOOL_NAMES_RU: Record<SpellSchool, string> = {
@@ -19,6 +20,22 @@ const SCHOOL_NAMES_RU: Record<SpellSchool, string> = {
 const SCHOOLS = Object.keys(SCHOOL_NAMES_RU) as SpellSchool[];
 
 const LEVEL_NAMES = (lvl: number) => (lvl === 0 ? 'Заговор' : `${lvl} уровень`);
+
+// Оцифровка для боевого движка
+const EFFECT_TYPE_NAMES_RU: Record<NonNullable<Spell['effectType']>, string> = {
+  attack: 'Атака заклинанием',
+  save: 'Спасбросок',
+  utility: 'Без урона / служебное',
+};
+const TARGETING_NAMES_RU: Record<NonNullable<Spell['targeting']>, string> = {
+  single: 'Одна цель',
+  area: 'Область / несколько целей',
+};
+// Подсказки типов урона (список не ограничивает — поле свободное)
+const DAMAGE_TYPE_HINTS = [
+  'огонь', 'холод', 'электричество', 'звук', 'излучение', 'силовое поле',
+  'некротический', 'кислота', 'яд', 'психический', 'дробящий', 'колющий', 'рубящий',
+];
 
 interface Props {
   initial?: Spell;
@@ -187,6 +204,134 @@ export default function SpellEditor({ initial, onSaved, onCancel }: Props) {
           value={s.description}
           onChange={(e) => set('description', e.target.value)}
         />
+      </div>
+
+      {/* ── Оцифровка для боевого движка ── */}
+      <h3 style={{ margin: '14px 0 8px' }}>Боевые данные</h3>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+        <div className="form-field">
+          <label>Тип эффекта</label>
+          <select
+            value={s.effectType ?? ''}
+            onChange={(e) =>
+              set('effectType', e.target.value === '' ? undefined : (e.target.value as Spell['effectType']))
+            }
+          >
+            <option value="">— не задан —</option>
+            {(Object.keys(EFFECT_TYPE_NAMES_RU) as (keyof typeof EFFECT_TYPE_NAMES_RU)[]).map((k) => (
+              <option key={k} value={k}>{EFFECT_TYPE_NAMES_RU[k]}</option>
+            ))}
+          </select>
+        </div>
+        <div className="form-field">
+          <label>Выбор целей</label>
+          <select
+            value={s.targeting ?? ''}
+            onChange={(e) =>
+              set('targeting', e.target.value === '' ? undefined : (e.target.value as Spell['targeting']))
+            }
+          >
+            <option value="">— не задан —</option>
+            {(Object.keys(TARGETING_NAMES_RU) as (keyof typeof TARGETING_NAMES_RU)[]).map((k) => (
+              <option key={k} value={k}>{TARGETING_NAMES_RU[k]}</option>
+            ))}
+          </select>
+        </div>
+        {s.effectType === 'save' && (
+          <div className="form-field">
+            <label>Характеристика спасброска</label>
+            <select
+              value={s.saveAbility ?? ''}
+              onChange={(e) =>
+                set('saveAbility', e.target.value === '' ? undefined : (e.target.value as Ability))
+              }
+            >
+              <option value="">— не задана —</option>
+              {ABILITIES.map((ab) => (
+                <option key={ab} value={ab}>{ABILITY_NAMES_RU[ab]}</option>
+              ))}
+            </select>
+          </div>
+        )}
+        {(s.heals || s.effectType === 'attack' || s.effectType === 'save') && (
+          <div className="form-field">
+            <label>{s.heals ? 'Кости лечения (без модификатора, например 2d8)' : 'Кости урона (например, 8d6)'}</label>
+            <input
+              value={s.damageDice ?? ''}
+              onChange={(e) => set('damageDice', e.target.value)}
+              placeholder={s.heals ? '2d8' : '8d6'}
+            />
+          </div>
+        )}
+        {!s.heals && (s.effectType === 'attack' || s.effectType === 'save') && (
+          <div className="form-field">
+            <label>Тип урона</label>
+            <input
+              value={s.damageType ?? ''}
+              onChange={(e) => set('damageType', e.target.value)}
+              placeholder="огонь"
+              list="spell-damage-types"
+            />
+            <datalist id="spell-damage-types">
+              {DAMAGE_TYPE_HINTS.map((t) => <option key={t} value={t} />)}
+            </datalist>
+          </div>
+        )}
+        {s.effectType === 'attack' && (
+          <div className="form-field">
+            <label>Число попаданий/лучей</label>
+            <input
+              type="number"
+              min={1}
+              value={s.projectiles ?? ''}
+              onChange={(e) =>
+                set('projectiles', e.target.value === '' ? undefined : Number(e.target.value))
+              }
+              placeholder="1"
+            />
+          </div>
+        )}
+        <div className="form-field">
+          <label>Upcast: прибавка за уровень ячейки выше базового</label>
+          <input
+            value={s.upcast?.perSlotLevel ?? ''}
+            onChange={(e) =>
+              set('upcast', e.target.value.trim() === '' ? undefined : { perSlotLevel: e.target.value.trim() })
+            }
+            placeholder="+1d6 / +1 цель / пусто, если нет"
+          />
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 24, marginBottom: 10, flexWrap: 'wrap' }}>
+        {s.effectType === 'save' && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 14 }}>
+            <input
+              type="checkbox"
+              checked={s.halfOnSuccess ?? false}
+              onChange={(e) => set('halfOnSuccess', e.target.checked)}
+            />
+            Половина урона при успехе
+          </label>
+        )}
+        {s.effectType === 'attack' && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 14 }}>
+            <input
+              type="checkbox"
+              checked={s.autoHit ?? false}
+              onChange={(e) => set('autoHit', e.target.checked)}
+            />
+            Автоматическое попадание
+          </label>
+        )}
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 14 }}>
+          <input
+            type="checkbox"
+            checked={s.heals ?? false}
+            onChange={(e) => set('heals', e.target.checked)}
+          />
+          Лечит, а не наносит урон
+        </label>
       </div>
 
       <div className="form-field">
