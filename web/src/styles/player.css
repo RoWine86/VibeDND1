@@ -185,6 +185,70 @@
 
 .player-slots { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
 
+/* Пипки ячеек заклинаний (крупнее, чем в листе персонажа — для пальцев) */
+.player-slot-pips { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; }
+.player-slot-row { display: flex; align-items: center; gap: 10px; font-size: 14px; }
+.player-slot-lvl { color: var(--text-dim); min-width: 46px; }
+.player-slot-pips .slot-pip { width: 24px; height: 24px; }
+
+.player-rest-row { display: flex; gap: 8px; margin-bottom: 12px; }
+.player-rest-row button { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 10px; }
+
+/* Выбор уровня ячейки при касте */
+.player-slot-choice { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.player-slot-btn { padding: 8px 10px; font-size: 14px; }
+.player-slot-btn.active { background: var(--gold); border-color: var(--gold); color: #1a1408; font-weight: 700; }
+.player-slot-btn:disabled { opacity: 0.4; }
+.player-warn { color: var(--crimson); margin-top: 6px; }
+
+/* ── Выбор целей ── */
+
+.player-targets { display: flex; flex-direction: column; gap: 6px; }
+.player-target {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  font-size: 15px;
+  min-height: 44px; /* крупная тач-цель */
+}
+.player-target input { width: 20px; height: 20px; accent-color: var(--gold); }
+.player-target.selected { border-color: var(--gold); background: rgba(201, 162, 39, 0.12); }
+.player-target-name { font-weight: 600; }
+.player-target .player-dim { margin-left: auto; }
+.player-target-go { margin-top: 8px; padding: 12px; font-size: 15px; display: flex; align-items: center; justify-content: center; gap: 6px; }
+
+/* ── Карточка спасброска ── */
+
+.player-save-modal { width: 100%; max-width: 380px; text-align: center; }
+.player-save-icon { color: var(--gold-bright); margin-bottom: 6px; display: flex; justify-content: center; }
+.player-save-modal h2 { font-size: 22px; margin-bottom: 4px; }
+.player-save-dc { font-size: 30px; font-weight: 800; color: var(--gold-bright); margin: 6px 0 10px; }
+.player-save-roll { width: 100%; padding: 14px; font-size: 16px; margin: 14px 0 10px; display: flex; align-items: center; justify-content: center; gap: 8px; }
+.player-save-physical { display: flex; gap: 8px; }
+.player-save-physical input { flex: 1; padding: 12px; font-size: 16px; }
+.player-save-physical button { padding: 12px 18px; font-size: 15px; }
+
+/* ── Лента событий боя ── */
+
+.player-event {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+  font-size: 13.5px;
+  line-height: 1.4;
+}
+.player-event:first-of-type { border-top: none; }
+.player-event-icon { flex-shrink: 0; width: 18px; text-align: center; }
+.player-event.mine .player-event-text { color: var(--gold-bright); }
+.player-event.phase-death .player-event-text { color: var(--crimson); font-weight: 700; }
+.player-event.phase-heal .player-event-text { color: var(--hp-green); }
+
 .player-spell { border-top: 1px solid var(--border); }
 .player-spell:first-of-type { border-top: none; }
 .player-spell-head {

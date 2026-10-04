@@ -7,15 +7,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
-  BookOpen, Dices, Heart, Package, Sword, User, Users, Zap,
+  BookOpen, Dices, Heart, Moon, Package, ShieldAlert, Skull, Sun, Sword,
+  Target, User, Users, Zap,
 } from 'lucide-react';
 import {
   ABILITIES, ABILITY_NAMES_RU, CONDITION_NAMES_RU, abilityModifier, canEquip,
   characterLevel, classNameRu, modifierText, proficiencyBonus, usedHands,
 } from '@vibednd/shared';
 import type {
-  AttackEntry, Character, CharacterClass, DiceLogEntry, Item,
-  SessionState, Spell,
+  Ability, AttackEntry, Character, CharacterClass, ClientMsg, CombatEvent,
+  DiceLogEntry, Item, LiveToken, SaveRequest, SessionState, Spell,
 } from '@vibednd/shared';
 import { api } from '../api';
 import { SessionProvider, useSessionStore } from '../sessionStore';
@@ -56,7 +57,9 @@ function PlayerContent({
   characterId?: string;
 }) {
   const navigate = useNavigate();
-  const { session, characters, items, error, send } = useSessionStore();
+  const {
+    session, characters, items, combatEvents, saveRequests, error, send,
+  } = useSessionStore();
 
   const [classes, setClasses] = useState<CharacterClass[]>([]);
   const [spells, setSpells] = useState<Spell[]>([]);
@@ -214,10 +217,18 @@ function PlayerContent({
           spells={spells}
           classesById={classesById}
           characters={characters}
+          combatEvents={combatEvents}
           patchMe={patchMe}
           roll={roll}
+          send={send}
+          flash={flash}
         />
       </main>
+
+      {/* Очередь спасбросков — большая карточка поверх всего */}
+      {saveRequests.filter((r) => r.characterId === characterId).map((req) => (
+        <SaveRequestModal key={req.id} request={req} send={send} />
+      ))}
 
       {toast && <div className="player-toast anim-fade-in">{toast}</div>}
       {combat.active && (
@@ -225,6 +236,68 @@ function PlayerContent({
           Бой, раунд {combat.round} · ход: {combat.entries[combat.currentIndex]?.name ?? '—'}
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Карточка спасброска ────────────────────────────────────────────────────
+
+const SAVE_ABILITY_RU: Record<Ability, string> = {
+  str: 'Силы', dex: 'Ловкости', con: 'Телосложения', int: 'Интеллекта', wis: 'Мудрости', cha: 'Харизмы',
+};
+
+function SaveRequestModal({
+  request, send,
+}: { request: SaveRequest; send: (msg: ClientMsg) => void }) {
+  const [physical, setPhysical] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const rollVirtual = () => {
+    setBusy(true);
+    send({ type: 'saveRoll', requestId: request.id });
+  };
+  const submitPhysical = () => {
+    const value = parseInt(physical, 10);
+    if (!Number.isFinite(value)) return;
+    setBusy(true);
+    send({ type: 'saveResult', requestId: request.id, value });
+  };
+
+  return (
+    <div className="modal-backdrop">
+      <div className="modal player-save-modal anim-fade-in">
+        <div className="player-save-icon"><ShieldAlert size={30} /></div>
+        <h2>Спасбросок {SAVE_ABILITY_RU[request.ability]}</h2>
+        <p className="player-save-dc">Сл {request.dc}</p>
+        {request.spellName && (
+          <p className="player-dim">
+            {request.sourceName} · «{request.spellName}»
+            {request.halfOnSuccess ? ' · половина урона при успехе' : ''}
+          </p>
+        )}
+        <p className="player-dim">
+          Ваш бонус: {request.bonus >= 0 ? `+${request.bonus}` : request.bonus}
+          {request.pendingDamage.total > 0 && ` · урон при провале: ${request.pendingDamage.total}`}
+        </p>
+        <button className="primary player-save-roll" onClick={rollVirtual} disabled={busy}>
+          <Dices size={18} /> Кинуть (виртуальный d20)
+        </button>
+        <div className="player-save-physical">
+          <input
+            type="number"
+            inputMode="numeric"
+            min={1}
+            max={20}
+            value={physical}
+            disabled={busy}
+            onChange={(e) => setPhysical(e.target.value)}
+            placeholder="Результат физического кубика (1–20)"
+          />
+          <button onClick={submitPhysical} disabled={busy || !physical.trim()}>
+            Вписать
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -262,11 +335,24 @@ function TabContent(p: {
   spells: Spell[];
   classesById: Map<string, CharacterClass>;
   characters: Character[];
+  combatEvents: CombatEvent[];
   patchMe: (patch: Partial<Character>) => void;
   roll: (label: string, formula: string) => void;
+  send: (msg: ClientMsg) => void;
+  flash: (text: string) => void;
 }) {
-  const { tab, me, log, items, spells, classesById, patchMe, roll } = p;
+  const { tab, me, log, items, spells, classesById, combatEvents, patchMe, roll, send, flash } = p;
   const prof = proficiencyBonus(characterLevel(me));
+
+  // Цели на активной карте из стора сессии. Скрытые токены игроку не
+  // приходят — фильтруем на всякий случай. Враги — для атак и боевых
+  // заклинаний, союзники (токены персонажей) — для лечения.
+  const mapTokens = useMemo(
+    () => p.session.tokens.filter((t) => t.mapId === p.session.activeMapId && !t.hidden),
+    [p.session.tokens, p.session.activeMapId],
+  );
+  const enemies = mapTokens.filter((t) => t.kind !== 'player');
+  const allies = mapTokens.filter((t) => t.kind === 'player');
 
   if (tab === 'sheet') {
     return (
@@ -372,14 +458,27 @@ function TabContent(p: {
                     +{a.attackBonus} · {a.damageDice}{a.damageBonus ? `+${a.damageBonus}` : ''} {a.damageType}
                   </span>
                 </div>
-                <div className="player-attack-btns">
-                  <button onClick={() => roll(`Атака: ${a.name}`, `1d20+${a.attackBonus}`)}>Атака</button>
-                  <button onClick={() => roll(`Урон: ${a.name}`, `${a.damageDice}${a.damageBonus ? `+${a.damageBonus}` : ''}`)}>Урон</button>
-                </div>
+                <TargetPicker
+                  targets={enemies}
+                  emptyHint="На карте нет видимых целей."
+                  actionLabel="Атаковать"
+                  groupKey={`atk-${i}`}
+                  onPick={(tokenIds) => {
+                    send({
+                      type: 'attackWith',
+                      attackerCharacterId: me.id,
+                      attackName: a.name,
+                      targetTokenId: tokenIds[0]!,
+                    });
+                    flash(`Атака: ${a.name}`);
+                  }}
+                />
               </div>
             ))}
           </section>
         )}
+
+        <CombatEventFeed events={combatEvents} me={me} />
 
         <section className="player-panel">
           <h2>Лог бросков</h2>
@@ -405,9 +504,21 @@ function TabContent(p: {
       .filter((s): s is Spell => Boolean(s))
       .sort((a, b) => a.level - b.level || a.nameRu.localeCompare(b.nameRu));
     const cls = me.classes[0] ? classesById.get(me.classes[0].classId) : undefined;
-    const spellScore = cls?.spellcastingAbility ? me.abilityScores[cls.spellcastingAbility] : 10;
+    const spellScore = cls?.spellcastingAbility
+      ? me.abilityScores[cls.spellcastingAbility] + (me.backgroundBonuses[cls.spellcastingAbility] ?? 0)
+      : 10;
     const dc = 8 + prof + abilityModifier(spellScore);
     const atk = prof + abilityModifier(spellScore);
+    // клик по пипке: по заполненной — потратить её и правее, по пустой —
+    // восстановить до неё (сервер авторитетен, значения приходят из стора)
+    const toggleSlot = (lvlIdx: number, pipIdx: number) => {
+      const current = [...me.spellSlotsCurrent];
+      const cur = current[lvlIdx] ?? 0;
+      current[lvlIdx] = pipIdx < cur
+        ? pipIdx
+        : Math.min(me.spellSlotsMax[lvlIdx] ?? 0, pipIdx + 1);
+      patchMe({ spellSlotsCurrent: current });
+    };
     return (
       <div className="anim-fade-in">
         <section className="player-panel">
@@ -417,23 +528,67 @@ function TabContent(p: {
               СЛ {dc} · атака {atk >= 0 ? `+${atk}` : atk} · базовая характеристика: {ABILITY_NAMES_RU[cls.spellcastingAbility]}
             </p>
           )}
-          {me.spellSlotsMax.length > 0 && (
-            <div className="player-slots">
-              {me.spellSlotsMax.map((max, lvl) =>
-                max > 0 ? (
-                  <span key={lvl} className="player-dim">
-                    {lvl + 1} ур.: {me.spellSlotsCurrent[lvl] ?? 0}/{max}
-                  </span>
-                ) : null,
-              )}
+          {me.spellSlotsMax.some((n) => n > 0) && (
+            <div className="player-slot-pips">
+              {me.spellSlotsMax.map((max, lvlIdx) => {
+                if (max <= 0) return null;
+                const cur = me.spellSlotsCurrent[lvlIdx] ?? 0;
+                return (
+                  <div className="player-slot-row" key={lvlIdx}>
+                    <span className="player-slot-lvl">{lvlIdx + 1} ур.</span>
+                    <span className="slot-pips">
+                      {Array.from({ length: max }, (_, pip) => (
+                        <button
+                          key={pip}
+                          className={`slot-pip${pip < cur ? ' full' : ''}`}
+                          onClick={() => toggleSlot(lvlIdx, pip)}
+                          title={pip < cur ? 'Потратить ячейку' : 'Восстановить ячейку'}
+                        />
+                      ))}
+                    </span>
+                    <span className="player-dim">{cur}/{max}</span>
+                  </div>
+                );
+              })}
             </div>
           )}
+          <div className="player-rest-row">
+            <button
+              onClick={() => send({ type: 'rest', characterId: me.id, kind: 'short' })}
+              disabled={me.hitDiceCurrent <= 0}
+            >
+              <Sun size={15} /> Короткий отдых
+            </button>
+            <button onClick={() => send({ type: 'rest', characterId: me.id, kind: 'long' })}>
+              <Moon size={15} /> Длинный отдых
+            </button>
+          </div>
           {known.length === 0 ? (
             <p className="player-dim">Заклинаний нет.</p>
           ) : (
-            known.map((s) => <SpellRow key={s.id} spell={s} atk={atk} onCast={roll} />)
+            known.map((s) => (
+              <SpellRow
+                key={s.id}
+                spell={s}
+                me={me}
+                dc={dc}
+                enemies={enemies}
+                allies={allies}
+                onCast={(slotLevel, targetTokenIds) => {
+                  send({
+                    type: 'castSpell',
+                    characterId: me.id,
+                    spellId: s.id,
+                    slotLevel,
+                    targetTokenIds,
+                  });
+                  flash(`«${s.nameRu}» сотворено`);
+                }}
+              />
+            ))
           )}
         </section>
+        <CombatEventFeed events={combatEvents} me={me} />
       </div>
     );
   }
@@ -522,26 +677,196 @@ function TabContent(p: {
   );
 }
 
-// ─── Строка заклинания с раскрытием описания ────────────────────────────────
+// ─── Выбор цели ─────────────────────────────────────────────────────────────
 
-function SpellRow({ spell, atk, onCast }: { spell: Spell; atk: number; onCast: (label: string, formula: string) => void }) {
+/**
+ * Выбор цели из токенов: одна (select) или несколько (чекбоксы) для area.
+ * Кнопка действия появляется только когда цель выбрана — крупные тач-цели.
+ */
+function TargetPicker({
+  targets, emptyHint, actionLabel, multi = false, groupKey, disabled = false, onPick,
+}: {
+  targets: LiveToken[];
+  emptyHint: string;
+  actionLabel: string;
+  multi?: boolean;
+  /** уникальное имя radio-группы (у разных атак цели могут совпадать) */
+  groupKey: string;
+  disabled?: boolean;
+  onPick: (tokenIds: string[]) => void;
+}) {
+  const [selected, setSelected] = useState<string[]>([]);
+  if (targets.length === 0) return <p className="player-dim">{emptyHint}</p>;
+
+  const toggle = (id: string) => {
+    if (multi) {
+      setSelected((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
+    } else {
+      setSelected([id]);
+    }
+  };
+
+  return (
+    <div className="player-targets">
+      {targets.map((t) => (
+        <label key={t.id} className={`player-target${selected.includes(t.id) ? ' selected' : ''}`}>
+          <input
+            type={multi ? 'checkbox' : 'radio'}
+            name={`target-${groupKey}`}
+            checked={selected.includes(t.id)}
+            onChange={() => toggle(t.id)}
+          />
+          <span className="player-target-name">{t.name || 'Безымянный'}</span>
+          {t.maxHp > 0 && (
+            <span className="player-dim">{t.currentHp}/{t.maxHp}</span>
+          )}
+        </label>
+      ))}
+      {selected.length > 0 && (
+        <button
+          className="primary player-target-go"
+          disabled={disabled}
+          onClick={() => onPick(selected)}
+        >
+          <Target size={14} /> {actionLabel}{selected.length > 1 ? ` (${selected.length})` : ''}
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ─── Строка заклинания: ячейка + цели + каст ────────────────────────────────
+
+function SpellRow({
+  spell, me, dc, enemies, allies, onCast,
+}: {
+  spell: Spell;
+  me: Character;
+  dc: number;
+  enemies: LiveToken[];
+  allies: LiveToken[];
+  onCast: (slotLevel: number, targetTokenIds: string[]) => void;
+}) {
   const [open, setOpen] = useState(false);
+  const isCantrip = spell.level === 0;
+  const needsTargets = spell.effectType === 'attack' || spell.effectType === 'save' || spell.heals === true;
+  const targets = spell.heals ? allies : enemies;
+
+  // доступные ячейки: уровень не ниже уровня заклинания и есть свободные
+  const slotOptions: number[] = [];
+  if (!isCantrip) {
+    for (let lvl = spell.level; lvl <= 9; lvl++) {
+      if ((me.spellSlotsCurrent[lvl - 1] ?? 0) > 0) slotOptions.push(lvl);
+    }
+  }
+  const [slotLevel, setSlotLevel] = useState(spell.level);
+  const effectiveSlot = isCantrip ? 0 : slotLevel;
+  const canCast = isCantrip || slotOptions.includes(effectiveSlot);
+
   return (
     <div className="player-spell">
       <button className="player-spell-head" onClick={() => setOpen((v) => !v)}>
         <span>{spell.nameRu}</span>
         <span className="player-dim">
-          {spell.level === 0 ? 'Заговор' : `${spell.level} ур.`} · {spell.castingTime}
+          {isCantrip ? 'Заговор' : `${spell.level} ур.`} · {spell.castingTime}
         </span>
       </button>
       {open && (
         <div className="player-spell-body anim-fade-in">
           <SpellDetails spell={spell} showHeader={false} />
-          <button onClick={() => onCast(`Заклинание: ${spell.nameRu}`, `1d20${atk >= 0 ? '+' : ''}${atk}`)}>
-            <Zap size={13} /> Сотворить (атака {atk >= 0 ? `+${atk}` : atk})
-          </button>
+
+          {/* выбор уровня ячейки (заговоры — без ячеек) */}
+          {!isCantrip && (
+            <div className="form-field" style={{ marginTop: 10 }}>
+              <label>Уровень ячейки</label>
+              <div className="player-slot-choice">
+                {Array.from({ length: 9 - spell.level + 1 }, (_, i) => spell.level + i).map((lvl) => {
+                  const free = me.spellSlotsCurrent[lvl - 1] ?? 0;
+                  return (
+                    <button
+                      key={lvl}
+                      className={`player-slot-btn${slotLevel === lvl ? ' active' : ''}`}
+                      disabled={free <= 0}
+                      onClick={() => setSlotLevel(lvl)}
+                    >
+                      {lvl} ур.
+                      <span className="player-dim"> ×{free}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              {!canCast && (
+                <p className="player-dim player-warn">Нет свободных ячеек нужного уровня — отдохните.</p>
+              )}
+            </div>
+          )}
+
+          {/* цели: мультивыбор для area, одна для single; лечебные — по союзникам */}
+          {needsTargets ? (
+            <div style={{ marginTop: 10 }}>
+              <label className="player-dim" style={{ display: 'block', marginBottom: 6 }}>
+                {spell.heals ? 'Кого лечить' : spell.targeting === 'area' ? 'Цели (можно несколько)' : 'Цель'}
+                {spell.effectType === 'save' && !spell.heals && spell.saveAbility
+                  ? ` · спас ${SAVE_ABILITY_RU[spell.saveAbility]}, Сл ${dc}${spell.halfOnSuccess ? ' (половина при успехе)' : ''}`
+                  : ''}
+              </label>
+              <TargetPicker
+                targets={targets}
+                multi={spell.targeting === 'area'}
+                emptyHint={spell.heals ? 'На карте нет видимых союзников.' : 'На карте нет видимых целей.'}
+                actionLabel={`Сотворить${isCantrip ? '' : ` (ячейка ${effectiveSlot} ур.)`}`}
+                groupKey={`spell-${spell.id}`}
+                disabled={!canCast}
+                onPick={(ids) => onCast(effectiveSlot, ids)}
+              />
+            </div>
+          ) : (
+            // служебные заклинания (щит, доспехи мага, маскировка…) — без целей
+            <button
+              className="primary"
+              style={{ marginTop: 10 }}
+              disabled={!canCast}
+              onClick={() => onCast(effectiveSlot, [])}
+            >
+              <Zap size={13} /> Сотворить{isCantrip ? '' : ` (ячейка ${effectiveSlot} ур.)`}
+            </button>
+          )}
         </div>
       )}
     </div>
+  );
+}
+
+// ─── Лента событий боя ──────────────────────────────────────────────────────
+
+const PHASE_ICON: Record<CombatEvent['phase'], string> = {
+  cast: '✦',
+  attack: '⚔',
+  damage: '✸',
+  heal: '✚',
+  'save-request': '⛨',
+  'save-result': '⛨',
+  concentration: '◎',
+  death: '☠',
+  rest: '☾',
+};
+
+function CombatEventFeed({ events, me }: { events: CombatEvent[]; me: Character }) {
+  const recent = events.slice(-15).reverse();
+  if (recent.length === 0) return null;
+  return (
+    <section className="player-panel">
+      <h2><Skull size={16} /> События боя</h2>
+      {recent.map((e) => {
+        const mine =
+          e.sourceCharacterId === me.id || e.targetCharacterId === me.id;
+        return (
+          <div key={e.id} className={`player-event phase-${e.phase}${mine ? ' mine' : ''}`}>
+            <span className="player-event-icon">{PHASE_ICON[e.phase]}</span>
+            <span className="player-event-text">{e.text}</span>
+          </div>
+        );
+      })}
+    </section>
   );
 }
