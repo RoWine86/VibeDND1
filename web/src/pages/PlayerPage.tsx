@@ -15,10 +15,10 @@ import {
 } from '@vibednd/shared';
 import type {
   AttackEntry, Character, CharacterClass, DiceLogEntry, Item,
-  ServerMsg, SessionState, Spell,
+  SessionState, Spell,
 } from '@vibednd/shared';
 import { api } from '../api';
-import { SessionSocket } from '../ws';
+import { SessionProvider, useSessionStore } from '../sessionStore';
 import SpellDetails from '../components/SpellDetails';
 import '../styles/player.css';
 
@@ -39,18 +39,31 @@ const CATEGORY_RU: Record<Item['category'], string> = {
 
 export default function PlayerPage() {
   const { sessionId = '', characterId } = useParams();
-  const navigate = useNavigate();
+  return (
+    // без key: при выборе персонажа стор переживает переподключение сокета,
+    // чтобы уже загруженные items не пропадали (прежнее поведение)
+    <SessionProvider role="player" sessionId={sessionId} characterId={characterId}>
+      <PlayerContent sessionId={sessionId} characterId={characterId} />
+    </SessionProvider>
+  );
+}
 
-  const [session, setSession] = useState<SessionState | null>(null);
-  const [characters, setCharacters] = useState<Character[]>([]); // мой лист / партия
-  const [items, setItems] = useState<Item[]>([]);
+function PlayerContent({
+  sessionId,
+  characterId,
+}: {
+  sessionId: string;
+  characterId?: string;
+}) {
+  const navigate = useNavigate();
+  const { session, characters, items, error, send } = useSessionStore();
+
   const [classes, setClasses] = useState<CharacterClass[]>([]);
   const [spells, setSpells] = useState<Spell[]>([]);
-  const [fatal, setFatal] = useState('');
   const [toast, setToast] = useState('');
   const [tab, setTab] = useState<Tab>('sheet');
-  const sockRef = useRef<SessionSocket | null>(null);
   const toastTimer = useRef<number>(0);
+  const fatal = error;
 
   const me = useMemo(
     () => characters.find((c) => c.id === characterId) ?? null,
@@ -63,64 +76,13 @@ export default function PlayerPage() {
     api.get<Spell[]>('/entities/spell').then(setSpells).catch(() => undefined);
   }, []);
 
-  // Подключение к сессии
-  useEffect(() => {
-    if (!sessionId) return;
-    const sock = new SessionSocket('player', sessionId, characterId);
-    sockRef.current = sock;
-    const off = sock.onMessage((msg: ServerMsg) => {
-      switch (msg.type) {
-        case 'snapshot':
-          setSession(msg.session);
-          setCharacters(msg.characters);
-          if (!characterId) sock.send({ type: 'requestItems' });
-          break;
-        case 'items':
-          setItems(msg.items);
-          break;
-        case 'characterUpdated':
-          setCharacters((chs) => {
-            const rest = chs.filter((c) => c.id !== msg.character.id);
-            return [...rest, msg.character];
-          });
-          break;
-        case 'diceLog':
-          if (msg.entry.hidden) break;
-          setSession((s) => (s ? { ...s, diceLog: [...s.diceLog.slice(-19), msg.entry] } : s));
-          break;
-        case 'combat':
-          setSession((s) => (s ? { ...s, combat: msg.combat } : s));
-          break;
-        case 'tokenUpsert':
-          setSession((s) => {
-            if (!s) return s;
-            if (msg.token.hidden) return s;
-            const rest = s.tokens.filter((t) => t.id !== msg.token.id);
-            return { ...s, tokens: [...rest, msg.token] };
-          });
-          break;
-        case 'tokenRemoved':
-          setSession((s) => (s ? { ...s, tokens: s.tokens.filter((t) => t.id !== msg.tokenId) } : s));
-          break;
-        case 'error':
-          setFatal(msg.message);
-          break;
-      }
-    });
-    return () => {
-      off();
-      sock.close();
-      sockRef.current = null;
-    };
-  }, [sessionId, characterId]);
-
   const patchMe = (patch: Partial<Character>) => {
     if (!characterId) return;
-    sockRef.current?.send({ type: 'characterPatch', characterId, patch });
+    send({ type: 'characterPatch', characterId, patch });
   };
 
   const roll = (label: string, formula: string) => {
-    sockRef.current?.send({ type: 'rollDice', label, formula });
+    send({ type: 'rollDice', label, formula });
   };
 
   const flash = (text: string) => {

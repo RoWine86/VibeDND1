@@ -6,8 +6,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Dices, QrCode, Users } from 'lucide-react';
-import type { Adventure, Character, SessionState } from '@vibednd/shared';
-import { SessionSocket } from '../ws';
+import type { Adventure } from '@vibednd/shared';
+import { SessionProvider, useSessionStore } from '../sessionStore';
 import { api } from '../api';
 import MapCanvas from '../components/MapCanvas';
 import '../styles/map.css';
@@ -360,88 +360,20 @@ function QrCanvas({ url }: { url: string }) {
 
 export default function BoardPage() {
   const { sessionId = '' } = useParams();
-  const [session, setSession] = useState<SessionState | null>(null);
-  const [characters, setCharacters] = useState<Character[]>([]);
+  return (
+    <SessionProvider role="board" sessionId={sessionId}>
+      <BoardContent sessionId={sessionId} />
+    </SessionProvider>
+  );
+}
+
+function BoardContent({ sessionId }: { sessionId: string }) {
+  const { session, characters, error } = useSessionStore();
   const [adventure, setAdventure] = useState<Adventure | null>(null);
   const [joinUrl, setJoinUrl] = useState('');
-  const [fatal, setFatal] = useState('');
-  const sockRef = useRef<SessionSocket | null>(null);
-
-  // подключение к сессии
-  useEffect(() => {
-    if (!sessionId) return;
-    const sock = new SessionSocket('board', sessionId);
-    sockRef.current = sock;
-    const off = sock.onMessage((msg) => {
-      switch (msg.type) {
-        case 'snapshot':
-          setSession(msg.session);
-          setCharacters(msg.characters);
-          break;
-        case 'tokenUpsert':
-          setSession((s) => {
-            if (!s) return s;
-            // скрытые токены доске не присылаются в снимке, но tokenUpsert
-            // идёт всем — фильтруем самостоятельно
-            const rest = s.tokens.filter((t) => t.id !== msg.token.id);
-            const tokens = msg.token.hidden ? rest : [...rest, msg.token];
-            return { ...s, tokens };
-          });
-          break;
-        case 'tokenRemoved':
-          setSession((s) => (s ? { ...s, tokens: s.tokens.filter((t) => t.id !== msg.tokenId) } : s));
-          break;
-        case 'fogReveals':
-          setSession((s) =>
-            s
-              ? {
-                  ...s,
-                  fogReveals: [
-                    ...s.fogReveals.filter((r) => r.mapId !== msg.mapId),
-                    ...msg.reveals.map((r) => ({ ...r, mapId: msg.mapId })),
-                  ],
-                }
-              : s,
-          );
-          break;
-        case 'strokeAdded':
-          setSession((s) =>
-            s ? { ...s, drawings: [...s.drawings.filter((d) => d.id !== msg.stroke.id), msg.stroke] } : s,
-          );
-          break;
-        case 'strokeRemoved':
-          setSession((s) => (s ? { ...s, drawings: s.drawings.filter((d) => d.id !== msg.strokeId) } : s));
-          break;
-        case 'drawingsCleared':
-          setSession((s) => (s ? { ...s, drawings: s.drawings.filter((d) => d.mapId !== msg.mapId) } : s));
-          break;
-        case 'combat':
-          setSession((s) => (s ? { ...s, combat: msg.combat } : s));
-          break;
-        case 'diceLog':
-          if (msg.entry.hidden) break; // скрытые броски на доске не показываем
-          setSession((s) => (s ? { ...s, diceLog: [...s.diceLog.slice(-49), msg.entry] } : s));
-          break;
-        case 'characterUpdated':
-          setCharacters((chs) => {
-            const rest = chs.filter((c) => c.id !== msg.character.id);
-            return [...rest, msg.character];
-          });
-          break;
-        case 'activeMap':
-          setSession((s) => (s ? { ...s, activeMapId: msg.mapId } : s));
-          break;
-        case 'error':
-          if (msg.message === 'Сессия не найдена') setFatal(msg.message);
-          break;
-      }
-    });
-    return () => {
-      off();
-      sock.close();
-      sockRef.current = null;
-    };
-  }, [sessionId]);
+  // Доска реагирует только на «Сессия не найдена» — прочие ошибки сервера
+  // на чистом экране не показываются (прежнее поведение).
+  const fatal = error === 'Сессия не найдена' ? error : '';
 
   // данные приключения (карты) и ссылка входа
   useEffect(() => {

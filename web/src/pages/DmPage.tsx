@@ -3,7 +3,7 @@
 // (ручной ввод инициативы или «Кинуть всем», следующий ход, конец боя),
 // скрытые броски мастера, заметки сцены (SceneNote).
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Crosshair,
   Dices,
@@ -22,7 +22,6 @@ import {
 } from 'lucide-react';
 import type {
   Adventure,
-  Character,
   ConditionKey,
   DiceLogEntry,
   DrawShape,
@@ -32,7 +31,7 @@ import type {
   TokenKind,
 } from '@vibednd/shared';
 import { abilityModifier, effectiveScores, CONDITION_NAMES_RU } from '@vibednd/shared';
-import { SessionSocket } from '../ws';
+import { SessionProvider, useSessionStore } from '../sessionStore';
 import { api } from '../api';
 import MapCanvas from '../components/MapCanvas';
 import type { FogReveal } from '../components/MapCanvas';
@@ -59,11 +58,70 @@ const KIND_LABEL: Record<TokenKind, string> = {
 export default function DmPage() {
   const [sessions, setSessions] = useState<SessionState[]>([]);
   const [pickedId, setPickedId] = useState(() => localStorage.getItem('vibednd.dmSession') ?? '');
-  const [session, setSession] = useState<SessionState | null>(null);
-  const [characters, setCharacters] = useState<Character[]>([]);
+  const [pickerError, setPickerError] = useState('');
+
+  // ── Список сессий ────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    api
+      .get<SessionState[]>('/sessions')
+      .then((list) => {
+        setSessions(list);
+        setPickerError('');
+      })
+      .catch((e: Error) => setPickerError(e.message));
+  }, []);
+
+  useEffect(() => {
+    if (pickedId) localStorage.setItem('vibednd.dmSession', pickedId);
+  }, [pickedId]);
+
+  // ── Экран выбора сессии ──────────────────────────────────────────────────
+
+  if (!pickedId) {
+    return (
+      <div className="dm-page" style={{ display: 'block', padding: 32 }}>
+        <div className="dm-session-picker anim-fade-in">
+          <h1>Консоль мастера</h1>
+          <p style={{ color: 'var(--text-dim)', marginBottom: 16 }}>
+            Выберите сессию, которой будете управлять.
+          </p>
+          {pickerError && <div className="error-box">Ошибка: {pickerError}</div>}
+          {sessions.length === 0 && !pickerError && (
+            <div className="empty-state">
+              <h2>Нет сессий</h2>
+              <p>Создайте сессию из приключения в библиотеке приключений.</p>
+            </div>
+          )}
+          {sessions.map((s) => (
+            <div key={s.id} className="dm-session-row">
+              <span>{s.name}</span>
+              <button className="primary" onClick={() => setPickedId(s.id)}>
+                Открыть
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Консоль: стор сессии пересоздаётся при смене сессии (key) ───────────
+
+  return (
+    <SessionProvider key={pickedId} role="dm" sessionId={pickedId}>
+      <DmConsole onPickSession={setPickedId} />
+    </SessionProvider>
+  );
+}
+
+function DmConsole({ onPickSession }: { onPickSession: (id: string) => void }) {
+  const store = useSessionStore();
+  const { session, characters } = store;
   const [adventure, setAdventure] = useState<Adventure | null>(null);
   const [loadError, setLoadError] = useState('');
-  const sockRef = useRef<SessionSocket | null>(null);
+  // ошибка WS (например, сохранённая сессия удалена) или локальная ошибка API
+  const consoleError = store.error || loadError;
 
   // панель
   const [tab, setTab] = useState<'tokens' | 'combat' | 'notes'>('tokens');
@@ -78,95 +136,12 @@ export default function DmPage() {
   const [noteDraft, setNoteDraft] = useState('');
   const [noteTitleDraft, setNoteTitleDraft] = useState('');
 
-  // ── Список сессий ────────────────────────────────────────────────────────
-
+  // снятие выделения: удалённый токен (прежнее поведение — из switch'а tokenRemoved)
   useEffect(() => {
-    api
-      .get<SessionState[]>('/sessions')
-      .then((list) => {
-        setSessions(list);
-        setLoadError('');
-      })
-      .catch((e: Error) => setLoadError(e.message));
-  }, []);
-
-  // ── Подключение к выбранной сессии ───────────────────────────────────────
-
-  useEffect(() => {
-    if (!pickedId) return;
-    localStorage.setItem('vibednd.dmSession', pickedId);
-    setSession(null);
-    setCharacters([]);
-    setSetupOpen(false);
-    setSetupRows(null);
-    setSelectedTokenId(null);
-
-    const sock = new SessionSocket('dm', pickedId);
-    sockRef.current = sock;
-    const off = sock.onMessage((msg) => {
-      switch (msg.type) {
-        case 'snapshot':
-          setSession(msg.session);
-          setCharacters(msg.characters);
-          break;
-        case 'tokenUpsert':
-          setSession((s) =>
-            s
-              ? { ...s, tokens: [...s.tokens.filter((t) => t.id !== msg.token.id), msg.token] }
-              : s,
-          );
-          break;
-        case 'tokenRemoved':
-          setSession((s) => (s ? { ...s, tokens: s.tokens.filter((t) => t.id !== msg.tokenId) } : s));
-          setSelectedTokenId((id) => (id === msg.tokenId ? null : id));
-          break;
-        case 'fogReveals':
-          setSession((s) =>
-            s
-              ? {
-                  ...s,
-                  fogReveals: [
-                    ...s.fogReveals.filter((r) => r.mapId !== msg.mapId),
-                    ...msg.reveals.map((r) => ({ ...r, mapId: msg.mapId })),
-                  ],
-                }
-              : s,
-          );
-          break;
-        case 'strokeAdded':
-          setSession((s) =>
-            s ? { ...s, drawings: [...s.drawings.filter((d) => d.id !== msg.stroke.id), msg.stroke] } : s,
-          );
-          break;
-        case 'strokeRemoved':
-          setSession((s) => (s ? { ...s, drawings: s.drawings.filter((d) => d.id !== msg.strokeId) } : s));
-          break;
-        case 'drawingsCleared':
-          setSession((s) => (s ? { ...s, drawings: s.drawings.filter((d) => d.mapId !== msg.mapId) } : s));
-          break;
-        case 'combat':
-          setSession((s) => (s ? { ...s, combat: msg.combat } : s));
-          break;
-        case 'diceLog':
-          setSession((s) => (s ? { ...s, diceLog: [...s.diceLog.slice(-49), msg.entry] } : s));
-          break;
-        case 'characterUpdated':
-          setCharacters((chs) => [...chs.filter((c) => c.id !== msg.character.id), msg.character]);
-          break;
-        case 'activeMap':
-          setSession((s) => (s ? { ...s, activeMapId: msg.mapId } : s));
-          break;
-        case 'error':
-          setLoadError(msg.message);
-          break;
-      }
-    });
-    return () => {
-      off();
-      sock.close();
-      sockRef.current = null;
-    };
-  }, [pickedId]);
+    if (selectedTokenId && !session?.tokens.some((t) => t.id === selectedTokenId)) {
+      setSelectedTokenId(null);
+    }
+  }, [session?.tokens, selectedTokenId]);
 
   // ── Приключение выбранной сессии ─────────────────────────────────────────
 
@@ -205,39 +180,16 @@ export default function DmPage() {
   );
   const selectedToken = mapTokens.find((t) => t.id === selectedTokenId) ?? null;
 
-  // ── Действия (только отправка в сокет; состояние придёт рассылкой) ───────
+  // ── Действия (отправка в сокет через стор; состояние придёт рассылкой) ───
 
-  const emit = (msg: Parameters<SessionSocket['send']>[0]) => sockRef.current?.send(msg);
+  const emit = store.send;
 
-  const onTokenMove = (tokenId: string, x: number, y: number) => {
-    // оптимистично двигаем локально, чтобы drag не дёргался
-    setSession((s) =>
-      s ? { ...s, tokens: s.tokens.map((t) => (t.id === tokenId ? { ...t, x, y } : t)) } : s,
-    );
-    emit({ type: 'moveToken', tokenId, x, y });
-  };
+  // движение токена и туман — оптимистичные, живут в сторе
+  const onTokenMove = store.moveToken;
 
   const onFog = (shape: FogShape, fogMode: 'reveal' | 'hide') => {
     if (!map) return;
-    if (fogMode === 'reveal') {
-      // оптимистично открываем область локально — кисть должна рисовать без задержки
-      const optimistic: FogReveal = { id: `local-${Date.now()}-${Math.random()}`, mapId: map.id, shape };
-      setSession((s) => (s ? { ...s, fogReveals: [...s.fogReveals, optimistic] } : s));
-    } else {
-      // оптимистично убираем совпадающие области, чтобы ответ сервера не откатывал UI
-      const shapeJson = JSON.stringify(shape);
-      setSession((s) =>
-        s
-          ? {
-              ...s,
-              fogReveals: s.fogReveals.filter(
-                (r) => !(r.mapId === map.id && JSON.stringify(r.shape) === shapeJson),
-              ),
-            }
-          : s,
-      );
-    }
-    emit({ type: 'fog', mapId: map.id, shape, mode: fogMode });
+    store.fog(map.id, shape, fogMode);
   };
 
   const onFogUndo = () => {
@@ -363,39 +315,15 @@ export default function DmPage() {
     setNoteDraft('');
   };
 
-  // ── Экран выбора сессии ──────────────────────────────────────────────────
-
-  if (!pickedId) {
-    return (
-      <div className="dm-page" style={{ display: 'block', padding: 32 }}>
-        <div className="dm-session-picker anim-fade-in">
-          <h1>Консоль мастера</h1>
-          <p style={{ color: 'var(--text-dim)', marginBottom: 16 }}>
-            Выберите сессию, которой будете управлять.
-          </p>
-          {loadError && <div className="error-box">Ошибка: {loadError}</div>}
-          {sessions.length === 0 && !loadError && (
-            <div className="empty-state">
-              <h2>Нет сессий</h2>
-              <p>Создайте сессию из приключения в библиотеке приключений.</p>
-            </div>
-          )}
-          {sessions.map((s) => (
-            <div key={s.id} className="dm-session-row">
-              <span>{s.name}</span>
-              <button className="primary" onClick={() => setPickedId(s.id)}>
-                Открыть
-              </button>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
   // ── Основной экран ───────────────────────────────────────────────────────
 
   const combatEntries = combat?.entries ?? [];
+
+  const backToPicker = () => {
+    onPickSession('');
+    localStorage.removeItem('vibednd.dmSession');
+    setLoadError('');
+  };
 
   return (
     <div className="dm-page">
@@ -419,17 +347,13 @@ export default function DmPage() {
 
       <aside className="dm-panel">
         {/* Ошибка подключения (например, сохранённая сессия удалена) */}
-        {loadError && (
+        {consoleError && (
           <div className="error-box" style={{ margin: '12px 14px 0' }}>
-            {loadError}
+            {consoleError}
             <button
               className="dm-btn"
               style={{ marginTop: 8 }}
-              onClick={() => {
-                setPickedId('');
-                localStorage.removeItem('vibednd.dmSession');
-                setLoadError('');
-              }}
+              onClick={backToPicker}
             >
               Выбрать другую сессию
             </button>
@@ -442,10 +366,7 @@ export default function DmPage() {
             <button
               className="dm-btn"
               title="Сменить сессию"
-              onClick={() => {
-                setPickedId('');
-                localStorage.removeItem('vibednd.dmSession');
-              }}
+              onClick={backToPicker}
             >
               Сменить
             </button>
