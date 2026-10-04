@@ -9,9 +9,13 @@ import {
 } from 'react';
 import type { ReactNode } from 'react';
 import type {
-  Character, ClientMsg, FogShape, Item, Role, ServerMsg, SessionState,
+  Character, ClientMsg, CombatEvent, FogShape, Item, Role, SaveRequest,
+  ServerMsg, SessionState,
 } from '@vibednd/shared';
 import { SessionSocket } from './ws';
+
+// Лента событий боя не растёт бесконечно (на сервере такой же лимит).
+const COMBAT_LOG_LIMIT = 200;
 
 // Лог бросков не растёт бесконечно: мастер и доска хранят последние 50,
 // телефон — последние 20 (лимиты прежних страничных switch'ей).
@@ -23,6 +27,10 @@ export interface SessionStoreState {
   session: SessionState | null;
   characters: Character[];
   items: Item[];
+  /** Лента структурных событий боя (шаг 2); UI появится в шагах 3–4. */
+  combatEvents: CombatEvent[];
+  /** Очередь ожидающих спасбросков, адресованных этому клиенту/мастеру. */
+  saveRequests: SaveRequest[];
   /** Текст последней WS-ошибки, '' — нет. Страницы трактуют её сами:
    *  доска показывает только «Сессия не найдена», телефон — любую. */
   error: string;
@@ -36,7 +44,9 @@ type Action =
   | { type: 'optimisticFog'; mapId: string; shape: FogShape; mode: 'reveal' | 'hide' };
 
 function initialState(role: Role): SessionStoreState {
-  return { role, session: null, characters: [], items: [], error: '' };
+  return {
+    role, session: null, characters: [], items: [], combatEvents: [], saveRequests: [], error: '',
+  };
 }
 
 /** Изменить снимок сессии; если снимка ещё нет — проигнорировать. */
@@ -50,8 +60,40 @@ function patchSession(
 function applyServerMsg(state: SessionStoreState, msg: ServerMsg): SessionStoreState {
   const { role } = state;
   switch (msg.type) {
-    case 'snapshot':
-      return { ...state, session: msg.session, characters: msg.characters, error: '' };
+    case 'snapshot': {
+      // combatLog/saveRequests из снимка подхватываем, чтобы переподключение
+      // не теряло очередь спасбросков и ленту боя. Доске очередь не нужна;
+      // игроку — только его персонажа (сервер и так адресует, фильтр страховка).
+      const myIds = new Set(msg.characters.map((c) => c.id));
+      const saveRequests = role === 'board'
+        ? []
+        : (msg.session.saveRequests ?? []).filter((r) =>
+            role === 'dm' || (r.characterId != null && myIds.has(r.characterId)));
+      return {
+        ...state,
+        session: msg.session,
+        characters: msg.characters,
+        combatEvents: msg.session.combatLog ?? [],
+        saveRequests,
+        error: '',
+      };
+    }
+
+    case 'combatEvent': {
+      const events = [...state.combatEvents, msg.event].slice(-COMBAT_LOG_LIMIT);
+      // разрешённый спасбросок убираем из очереди клиента
+      const requestId = msg.event.phase === 'save-result' ? msg.event.save?.requestId : undefined;
+      const saveRequests = requestId
+        ? state.saveRequests.filter((r) => r.id !== requestId)
+        : state.saveRequests;
+      return { ...state, combatEvents: events, saveRequests };
+    }
+
+    case 'saveRequest':
+      // сервер адресует сообщение; дубли не добавляем
+      return state.saveRequests.some((r) => r.id === msg.request.id)
+        ? state
+        : { ...state, saveRequests: [...state.saveRequests, msg.request] };
 
     case 'tokenUpsert': {
       // В снимке скрытых токенов нет, но tokenUpsert рассылается всем:

@@ -22,6 +22,12 @@ import '../styles/character.css';
 export interface CharacterSheetProps {
   character: Character;
   onPatch?: (patch: Partial<Character>) => void;
+  /**
+   * Отдых через WS-сессию (ROADMAP, шаг 2): сервер применяет отдых
+   * авторитетно и рассылает его всем (доска видит). Если не задан — кнопки
+   * отдыхают локально через onPatch (страница редактирования вне сессии).
+   */
+  onRest?: (kind: 'short' | 'long') => void;
   readonly?: boolean;
 }
 
@@ -35,7 +41,7 @@ interface RollResult {
 const SKILL_KEYS = Object.keys(SKILL_NAMES_RU) as SkillKey[];
 const CONDITION_KEYS = Object.keys(CONDITION_NAMES_RU) as ConditionKey[];
 
-export default function CharacterSheet({ character, onPatch, readonly }: CharacterSheetProps) {
+export default function CharacterSheet({ character, onPatch, onRest, readonly }: CharacterSheetProps) {
   const editable = !!onPatch && !readonly;
   const patch = (p: Partial<Character>) => onPatch?.(p);
 
@@ -146,6 +152,12 @@ export default function CharacterSheet({ character, onPatch, readonly }: Charact
   // ── Отдых ──
   const shortRest = () => {
     if (!editable) return;
+    // в сессии отдых применяет сервер (WS) и рассылает всем; вне сессии —
+    // локально через onPatch (страница редактирования персонажа)
+    if (onRest) {
+      onRest('short');
+      return;
+    }
     const conMod = abilityModifier(scores.con);
     let heal = 0;
     let used = 0;
@@ -170,6 +182,10 @@ export default function CharacterSheet({ character, onPatch, readonly }: Charact
   };
   const longRest = () => {
     if (!editable) return;
+    if (onRest) {
+      onRest('long');
+      return;
+    }
     patch({
       currentHp: character.maxHp,
       tempHp: 0,

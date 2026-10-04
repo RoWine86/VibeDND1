@@ -1,9 +1,10 @@
 // ─── Движок правил D&D 2024 (5.5e): модификаторы, кости, производные ────────
 
 import type {
-  Ability, AbilityScores, ArmorProficiency, Character, CharacterClass, Item,
-  WeaponCategory,
-} from './types';
+  Ability, AbilityScores, ArmorProficiency, Character, CharacterClass,
+  CombatAttackRoll, Item, Monster, Spell, WeaponCategory,
+} from './types.js';
+import { characterLevel } from './types.js';
 
 export function abilityModifier(score: number): number {
   return Math.floor((score - 10) / 2);
@@ -271,4 +272,325 @@ export function isProficientWith(
       classArmorProfs(classesById.get(cl.classId)).includes(armorType));
   }
   return true;
+}
+
+
+// ─── Боевой движок (ROADMAP, шаг 2) ─────────────────────────────────────────
+// Все броски делает сервер. Функции чистые и принимают rng — сценарии-проверки
+// воспроизводят конкретные исходы (крит, промах, успех/провал спасброска).
+
+/** Генератор случайного числа в [0, 1). */
+export type Rng = () => number;
+
+export const defaultRng: Rng = () => Math.random();
+
+/** rng с заданной последовательностью; после её исчерпания — Math.random. */
+export function sequenceRng(values: number[]): Rng {
+  let i = 0;
+  return () => (i < values.length ? values[i++]! : Math.random());
+}
+
+/** Одна кость d{sides}. */
+export function rollDie(sides: number, rng: Rng = defaultRng): number {
+  const v = Math.min(0.999999, Math.max(0, rng()));
+  return 1 + Math.floor(v * sides);
+}
+
+// ─── Урон ───────────────────────────────────────────────────────────────────
+
+export interface DamageRollResult {
+  dice: string;   // фактическое число костей: "16d6" на крите
+  rolls: number[];
+  bonus: number;
+  total: number;
+}
+
+/**
+ * Бросок урона/лечения по формуле "2d6+3". На крите удваивается ЧИСЛО костей;
+ * модификатор не удваивается (правила 2024).
+ */
+export function rollDamageFormula(
+  formula: string,
+  crit = false,
+  rng: Rng = defaultRng,
+): DamageRollResult {
+  const m = DICE_RE.exec(formula.replace(/\s/g, ''));
+  if (!m) throw new Error(`Некорректная формула урона: ${formula}`);
+  const count = Number(m[1] ?? 1);
+  const sides = Number(m[2]);
+  const bonus = Number(m[3] ?? 0);
+  const dieCount = crit ? count * 2 : count;
+  const rolls = Array.from({ length: dieCount }, () => rollDie(sides, rng));
+  const total = Math.max(0, rolls.reduce((a, b) => a + b, 0) + bonus);
+  return { dice: `${dieCount}d${sides}`, rolls, bonus, total };
+}
+
+// ─── Атака ──────────────────────────────────────────────────────────────────
+
+export interface AttackResolution {
+  roll: CombatAttackRoll;
+  damage: DamageRollResult;
+  damageType?: string;
+}
+
+/**
+ * Бросок атаки: d20 + бонус против КД. Натуральная 20 — автопопадание и
+ * двойные кости урона, натуральная 1 — автопромах (у обеих сторон).
+ * При промахе damage.total === 0 (кости всё же видны в логе).
+ */
+export function resolveAttack(
+  attackBonus: number,
+  targetAc: number,
+  damageFormula: string,
+  damageType?: string,
+  rng: Rng = defaultRng,
+): AttackResolution {
+  const d20 = rollDie(20, rng);
+  const crit = d20 === 20;
+  const fumble = d20 === 1;
+  const total = d20 + attackBonus;
+  const hit = crit || (!fumble && total >= targetAc);
+  const damage = rollDamageFormula(damageFormula, crit, rng);
+  return {
+    roll: { d20, bonus: attackBonus, total, ac: targetAc, hit, crit, fumble },
+    damage: hit ? damage : { ...damage, total: 0 },
+    damageType,
+  };
+}
+
+// ─── Спасброски ─────────────────────────────────────────────────────────────
+
+export interface SaveOutcome {
+  total: number;
+  success: boolean;
+  applied: number;
+}
+
+/**
+ * Разрешение спасброска против урона: успех при total >= dc. При успехе —
+ * половина урона (округление вниз), если halfOnSuccess, иначе урона нет.
+ */
+export function resolveSaveAgainstDamage(
+  d20: number,
+  bonus: number,
+  dc: number,
+  damageTotal: number,
+  halfOnSuccess: boolean,
+): SaveOutcome {
+  const total = d20 + bonus;
+  const success = total >= dc;
+  if (!success) return { total, success, applied: damageTotal };
+  return {
+    total,
+    success,
+    applied: halfOnSuccess ? Math.floor(damageTotal / 2) : 0,
+  };
+}
+
+/** Бонус спасброска персонажа: мод характеристики + владение. */
+export function characterSaveBonus(character: Character, ability: Ability): number {
+  const mod = abilityModifier(effectiveScores(character)[ability]);
+  const prof = proficiencyBonus(characterLevel(character));
+  return mod + (character.savingThrowProficiencies.includes(ability) ? prof : 0);
+}
+
+/** Бонус спасброска монстра: явный из savingThrows либо мод характеристики. */
+export function monsterSaveBonus(monster: Monster, ability: Ability): number {
+  const explicit = monster.savingThrows?.[ability];
+  if (typeof explicit === 'number') return explicit;
+  return abilityModifier(monster.abilities[ability] ?? 10);
+}
+
+/**
+ * Авто-спас концентрации при получении урона: СЛ = max(10, половина урона).
+ * Провал — концентрация снимается (решение ROADMAP, шаг 2).
+ */
+export function resolveConcentrationSave(
+  character: Character,
+  damage: number,
+  rng: Rng = defaultRng,
+): { dc: number; d20: number; bonus: number; success: boolean } {
+  const dc = concentrationDC(damage);
+  const bonus = characterSaveBonus(character, 'con');
+  const d20 = rollDie(20, rng);
+  return { dc, d20, bonus, success: d20 + bonus >= dc };
+}
+
+// ─── КД персонажа ───────────────────────────────────────────────────────────
+
+/** КД персонажа: надетая броня + щит (+2) + Ловкость по правилам брони. */
+export function characterArmorClass(
+  character: Character,
+  itemById: Map<string, Item>,
+): number {
+  const dexMod = abilityModifier(effectiveScores(character).dex);
+  const equipped = character.inventory
+    .filter((e) => e.equipped)
+    .map((e) => itemById.get(e.itemId))
+    .filter((i): i is Item => Boolean(i));
+
+  const bodyArmor = equipped.find((i) => {
+    const t = armorTypeOf(i);
+    return t !== null && t !== 'shield';
+  });
+  let ac = 10 + dexMod;
+  if (bodyArmor?.armorClassBase != null) {
+    const dexPart = bodyArmor.addDexToAC
+      ? Math.min(dexMod, bodyArmor.maxDexBonus ?? dexMod)
+      : 0;
+    ac = bodyArmor.armorClassBase + dexPart;
+  }
+  if (equipped.some(isShieldItem)) ac += 2;
+  return ac;
+}
+
+// ─── Заклинательные характеристики ──────────────────────────────────────────
+
+export interface SpellcastingInfo {
+  ability: Ability;
+  score: number;
+  dc: number;
+  attackBonus: number;
+  classId: string;
+}
+
+/** Заклинательная характеристика персонажа — первый класс с spellcastingAbility. */
+export function characterSpellcasting(
+  character: Character,
+  classesById: Map<string, CharacterClass>,
+): SpellcastingInfo | null {
+  const cls = character.classes
+    .map((c) => classesById.get(c.classId))
+    .find((c): c is CharacterClass => Boolean(c?.spellcastingAbility));
+  if (!cls?.spellcastingAbility) return null;
+  const level = characterLevel(character);
+  const score = effectiveScores(character)[cls.spellcastingAbility];
+  return {
+    ability: cls.spellcastingAbility,
+    score,
+    dc: spellSaveDC(score, level),
+    attackBonus: spellAttackBonus(score, level),
+    classId: cls.id,
+  };
+}
+
+// ─── Ячейки заклинаний ──────────────────────────────────────────────────────
+
+export interface SlotCheck {
+  ok: boolean;
+  reason?: string;
+}
+
+/**
+ * Можно ли сотворить заклинание из ячейки slotLevel. Заговоры (level 0)
+ * кастуются без ячеек — это правило движка, а не поле данных.
+ */
+export function canCastFromSlot(
+  spell: Pick<Spell, 'level'>,
+  slotLevel: number,
+  slotsCurrent: number[],
+): SlotCheck {
+  if (spell.level === 0) return { ok: true };
+  if (slotLevel < 1 || slotLevel > 9) return { ok: false, reason: 'Некорректный уровень ячейки' };
+  if (slotLevel < spell.level) {
+    return { ok: false, reason: `Ячейка ${slotLevel}-го уровня ниже уровня заклинания` };
+  }
+  if ((slotsCurrent[slotLevel - 1] ?? 0) < 1) {
+    return { ok: false, reason: `Нет свободных ячеек ${slotLevel}-го уровня` };
+  }
+  return { ok: true };
+}
+
+/** Трата одной ячейки slotLevel; возвращает новый массив (чистая функция). */
+export function spendSpellSlot(slotsCurrent: number[], slotLevel: number): number[] {
+  if (slotLevel < 1) return [...slotsCurrent];
+  const next = [...slotsCurrent];
+  const idx = slotLevel - 1;
+  next[idx] = Math.max(0, (next[idx] ?? 0) - 1);
+  return next;
+}
+
+// ─── Upcast ─────────────────────────────────────────────────────────────────
+
+const UPCAST_DICE_RE = /^\+(\d*)d(\d+)$/i;
+
+/**
+ * Костяная прибавка upcast'а за уровень ячейки выше базового.
+ * null, если upcast не костяной («+1 цель», «+1 луч», «+1 дротик») —
+ * такие эффекты разрешает вызывающий код, движок урона их не суммирует.
+ */
+export function upcastExtraDice(
+  spell: Pick<Spell, 'level' | 'upcast'>,
+  slotLevel: number,
+): { count: number; sides: number } | null {
+  const per = spell.upcast?.perSlotLevel;
+  if (!per) return null;
+  const m = UPCAST_DICE_RE.exec(per.trim());
+  if (!m) return null;
+  const levelsAbove = slotLevel - spell.level;
+  if (levelsAbove <= 0) return null;
+  const perLevel = m[1] ? Number(m[1]) : 1;
+  return { count: perLevel * levelsAbove, sides: Number(m[2]) };
+}
+
+/**
+ * Итоговая формула костей заклинания с учётом upcast'а: "8d6" + 2 уровня
+ * сверху по "+1d6" → "10d6". Если стороны не совпадают с базовыми —
+ * возвращается базовая формула (движок не смешивает разные кости).
+ */
+export function spellDamageFormula(
+  spell: Pick<Spell, 'level' | 'damageDice' | 'upcast'>,
+  slotLevel: number,
+): string | null {
+  const base = spell.damageDice;
+  if (!base) return null;
+  const bm = DICE_RE.exec(base.replace(/\s/g, ''));
+  if (!bm) return base;
+  const extra = upcastExtraDice(spell, slotLevel);
+  if (!extra) return base;
+
+  const baseCount = Number(bm[1] ?? 1);
+  const baseSides = Number(bm[2]);
+  const baseMod = Number(bm[3] ?? 0);
+  if (extra.sides !== baseSides) return base;
+
+  const count = baseCount + extra.count;
+  const mod = baseMod ? (baseMod > 0 ? `+${baseMod}` : `${baseMod}`) : '';
+  return `${count}d${baseSides}${mod}`;
+}
+
+// ─── Отдых ──────────────────────────────────────────────────────────────────
+
+/**
+ * Короткий отдых: одна кость хитов + мод Телосложения (минимум 1).
+ * Восстановление ресурсов (resetOn 'short') применяет вызывающий код.
+ */
+export function shortRestHeal(
+  character: Character,
+  rng: Rng = defaultRng,
+): { healed: number; hitDieRoll: number; hitDiceSpent: number } {
+  if (character.hitDiceCurrent <= 0 || character.currentHp >= character.maxHp) {
+    return { healed: 0, hitDieRoll: 0, hitDiceSpent: 0 };
+  }
+  const conMod = abilityModifier(effectiveScores(character).con);
+  const hitDieRoll = rollDie(character.hitDieType, rng);
+  return { healed: Math.max(1, hitDieRoll + conMod), hitDieRoll, hitDiceSpent: 1 };
+}
+
+/**
+ * Число дротиков/лучей при касте из ячейки slotLevel. Базовое значение —
+ * spell.projectiles (по умолчанию 1); upcast «+1 дротик»/«+1 луч» добавляет
+ * по одному за каждый уровень ячейки выше базового. Прочие upcast'ы
+ * («+1 цель», костяные) на число снарядов не влияют.
+ */
+export function spellProjectileCount(
+  spell: Pick<Spell, 'level' | 'projectiles' | 'upcast'>,
+  slotLevel: number,
+): number {
+  const base = spell.projectiles ?? 1;
+  const per = spell.upcast?.perSlotLevel?.trim() ?? '';
+  const levelsAbove = slotLevel - spell.level;
+  if (levelsAbove <= 0) return base;
+  if (!/\+1\s*(дротик|луч|снаряд)/i.test(per)) return base;
+  return base + levelsAbove;
 }

@@ -9,16 +9,24 @@ import { WebSocketServer, WebSocket } from 'ws';
 import {
   rollDice,
   type Character,
+  type CharacterClass,
   type ClientMsg,
   type DiceLogEntry,
   type DrawStroke,
   type Item,
   type LiveToken,
+  type Monster,
   type Role,
+  type SaveRequest,
   type ServerMsg,
   type SessionState,
+  type Spell,
 } from '@vibednd/shared';
 import * as db from './db.js';
+import {
+  resolveAttackWith, resolveCastSpell, resolveRest, resolveSaveRequest,
+  type CombatResult, type CombatWorld,
+} from './combat.js';
 
 const DICE_LOG_LIMIT = 200;
 
@@ -66,15 +74,84 @@ function sendError(client: Client, message: string): void {
   sendTo(client, { type: 'error', message });
 }
 
+/** Адресная доставка конкретному персонажу-владельцу (или всем мастерам). */
+function broadcastTo(sessionId: string, msg: ServerMsg, filter: (c: Client) => boolean): void {
+  for (const client of clients) {
+    if (client.sessionId !== sessionId) continue;
+    if (filter(client)) sendTo(client, msg);
+  }
+}
+
+// ─── Боевой движок (шаг 2) ──────────────────────────────────────────────────
+
+/** Мост между оркестратором боя и хранилищем. */
+const combatWorld: CombatWorld = {
+  getCharacter: (id) => db.getCharacter(id),
+  getSpell: (id) => db.getEntity('spell', id) as Spell | undefined,
+  getMonster: (id) => db.getEntity('monster', id) as Monster | undefined,
+  getItem: (id) => db.getEntity('item', id) as Item | undefined,
+  getCharacterClass: (id) => db.getEntity('class', id) as CharacterClass | undefined,
+  saveCharacter: (ch) => db.saveCharacter(ch),
+};
+
+/**
+ * Рассылает результаты боя: события — всем (со скрытыми токенами — только
+ * мастеру), запросы спасбросков — адресно (монстров кидает мастер, своего
+ * персонажа — владелец), персонажей/токены — стандартными сообщениями.
+ */
+function dispatchCombatResult(session: SessionState, res: CombatResult): void {
+  if (res.error) return; // обработчик сам шлёт ошибку
+  for (const event of res.events) {
+    const involvesHidden =
+      (event.sourceTokenId && session.tokens.find((t) => t.id === event.sourceTokenId)?.hidden) ||
+      (event.targetTokenId && session.tokens.find((t) => t.id === event.targetTokenId)?.hidden);
+    broadcast(session.id, { type: 'combatEvent', event }, Boolean(involvesHidden));
+  }
+  for (const request of res.saveRequests) {
+    broadcastTo(session.id, { type: 'saveRequest', request }, (c) =>
+      c.role === 'dm' || (c.role === 'player' && Boolean(request.characterId) && c.characterId === request.characterId));
+  }
+  for (const character of res.updatedCharacters) {
+    broadcast(session.id, { type: 'characterUpdated', character });
+  }
+  for (const token of res.updatedTokens) {
+    broadcast(session.id, { type: 'tokenUpsert', token });
+  }
+}
+
+/** Запуск оркестратора боя: ошибки — отправителю, успех — сохранение + рассылка. */
+function runCombat(client: Client, session: SessionState, fn: () => CombatResult): void {
+  const res = fn();
+  if (res.error) {
+    sendError(client, res.error);
+    return;
+  }
+  db.saveSession(session);
+  dispatchCombatResult(session, res);
+}
+
+/** Владелец персонажа может кидать/вписывать спасбросок своего персонажа. */
+function ownsSaveRequest(client: Client, req: SaveRequest): boolean {
+  return client.role === 'player' && Boolean(req.characterId) && client.characterId === req.characterId;
+}
+
 // ─── Снимок с учётом роли ───────────────────────────────────────────────────
 
-/** Доска и игроки не видят скрытые токены, скрытые броски и заметки о тумане. */
-function filterSessionForRole(session: SessionState, role: Role): SessionState {
+/** Доска и игроки не видят скрытые токены, скрытые броски и заметки о тумане.
+ *  Очередь спасбросков: доске не нужна вовсе, игроку — только его персонажа.
+ *  Лента боя: события со скрытыми токенами — только мастеру. */
+function filterSessionForRole(session: SessionState, role: Role, characterId?: string): SessionState {
   if (role === 'dm') return session;
+  const hiddenIds = new Set(session.tokens.filter((t) => t.hidden).map((t) => t.id));
   return {
     ...session,
     tokens: session.tokens.filter((t) => !t.hidden),
     diceLog: session.diceLog.filter((e) => !e.hidden),
+    combatLog: (session.combatLog ?? []).filter((e) =>
+      !(e.sourceTokenId && hiddenIds.has(e.sourceTokenId)) &&
+      !(e.targetTokenId && hiddenIds.has(e.targetTokenId))),
+    saveRequests: (session.saveRequests ?? []).filter((r) =>
+      role === 'player' && r.characterId != null && r.characterId === characterId),
   };
 }
 
@@ -86,7 +163,11 @@ function snapshotFor(client: Client, session: SessionState): ServerMsg {
       const ch = db.getCharacter(client.characterId);
       if (ch) characters.push(ch);
     }
-    return { type: 'snapshot', session: filterSessionForRole(session, client.role), characters };
+    return {
+      type: 'snapshot',
+      session: filterSessionForRole(session, client.role, client.characterId),
+      characters,
+    };
   }
   const characters = session.characterIds
     .map((id) => db.getCharacter(id))
@@ -441,6 +522,124 @@ function handleMessage(client: Client, session: SessionState, msg: ClientMsg): v
         }
       }
       db.saveSession(session);
+      return;
+    }
+
+    // ── Боевой движок (шаг 2) ─────────────────────────────────────────────
+
+    case 'castSpell': {
+      if (client.role === 'board') {
+        sendError(client, 'Доска не может творить заклинания');
+        return;
+      }
+      // игрок кастует только за своего персонажа; мастер — за любой источник
+      if (client.role === 'player') {
+        if (!msg.characterId || client.characterId !== msg.characterId) {
+          sendError(client, 'Игрок творит заклинания только за своего персонажа');
+          return;
+        }
+      }
+      runCombat(client, session, () =>
+        resolveCastSpell(session, combatWorld, {
+          characterId: msg.characterId,
+          tokenId: msg.tokenId,
+          spellId: msg.spellId,
+          slotLevel: msg.slotLevel,
+          targetTokenIds: msg.targetTokenIds,
+        }),
+      );
+      return;
+    }
+
+    case 'attackWith': {
+      if (client.role === 'board') {
+        sendError(client, 'Доска не может атаковать');
+        return;
+      }
+      if (client.role === 'player') {
+        if (!msg.attackerCharacterId || client.characterId !== msg.attackerCharacterId) {
+          sendError(client, 'Игрок атакует только за своего персонажа');
+          return;
+        }
+      }
+      runCombat(client, session, () =>
+        resolveAttackWith(session, combatWorld, {
+          attackerTokenId: msg.attackerTokenId,
+          attackerCharacterId: msg.attackerCharacterId,
+          attackName: msg.attackName,
+          weaponItemId: msg.weaponItemId,
+          targetTokenId: msg.targetTokenId,
+        }),
+      );
+      return;
+    }
+
+    case 'saveResult': {
+      const req = (session.saveRequests ?? []).find((r) => r.id === msg.requestId);
+      if (!req) {
+        sendError(client, 'Запрос спасброска не найден');
+        return;
+      }
+      if (!ownsSaveRequest(client, req)) {
+        sendError(client, 'Этот спасбросок кидает не ваш персонаж');
+        return;
+      }
+      runCombat(client, session, () =>
+        resolveSaveRequest(session, combatWorld, {
+          requestId: msg.requestId,
+          rolledValue: msg.value,
+          physical: true,
+        }),
+      );
+      return;
+    }
+
+    case 'saveRoll': {
+      const req = (session.saveRequests ?? []).find((r) => r.id === msg.requestId);
+      if (!req) {
+        sendError(client, 'Запрос спасброска не найден');
+        return;
+      }
+      if (!ownsSaveRequest(client, req)) {
+        sendError(client, 'Этот спасбросок кидает не ваш персонаж');
+        return;
+      }
+      runCombat(client, session, () =>
+        resolveSaveRequest(session, combatWorld, { requestId: msg.requestId }),
+      );
+      return;
+    }
+
+    case 'resolveSave': {
+      // мастер кидает/вписывает за монстра или фолбэк за игрока
+      if (!requireDm(client)) return;
+      const req = (session.saveRequests ?? []).find((r) => r.id === msg.requestId);
+      if (!req) {
+        sendError(client, 'Запрос спасброска не найден');
+        return;
+      }
+      runCombat(client, session, () =>
+        resolveSaveRequest(session, combatWorld, {
+          requestId: msg.requestId,
+          rolledValue: msg.rolledValue,
+          physical: msg.rolledValue != null,
+        }),
+      );
+      return;
+    }
+
+    case 'rest': {
+      if (client.role === 'board') {
+        sendError(client, 'Доска не может отдыхать');
+        return;
+      }
+      if (client.role === 'player' && client.characterId !== msg.characterId) {
+        sendError(client, 'Игрок отдыхает только за своего персонажа');
+        return;
+      }
+      runCombat(client, session, () =>
+        resolveRest(session, combatWorld, { characterId: msg.characterId, kind: msg.kind }),
+      );
       return;
     }
 

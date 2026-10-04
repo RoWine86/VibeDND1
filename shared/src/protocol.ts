@@ -4,9 +4,9 @@
 // соответствующее ServerMsg всем подключённым клиентам сессии.
 
 import type {
-  Character, ConditionKey, DiceLogEntry, DrawStroke, FogShape, Item,
-  LiveToken, SessionState, TokenKind,
-} from './types';
+  Character, CombatEvent, ConditionKey, DiceLogEntry, DrawStroke, FogShape,
+  Item, LiveToken, SaveRequest, SessionState, TokenKind,
+} from './types.js';
 
 export type Role = 'dm' | 'board' | 'player';
 
@@ -48,6 +48,45 @@ export type ClientMsg =
   | { type: 'sessionAddCharacter'; characterId: string }
   | { type: 'sessionRemoveCharacter'; characterId: string }
 
+  // ── Боевой движок (шаг 2) ──────────────────────────────────────────────
+
+  // Каст заклинания. Источник — персонаж (игрок) ИЛИ токен монстра
+  // (мастер). slotLevel — уровень ячейки (0 = заговор, без ячеек); для
+  // заклинаний с targeting:'area' — мультивыбор целей в targetTokenIds.
+  | {
+      type: 'castSpell';
+      characterId?: string;
+      tokenId?: string;
+      spellId: string;
+      slotLevel: number;
+      targetTokenIds: string[];
+    }
+
+  // Атака оружием/действием. Атакующий — токен монстра ИЛИ персонаж.
+  // attackName — готовая запись из Character.attacks / Monster.attacks;
+  // weaponItemId — вместо неё: атака строится по экипированному оружию
+  // персонажа (бонусы — из предмета и характеристик).
+  | {
+      type: 'attackWith';
+      attackerTokenId?: string;
+      attackerCharacterId?: string;
+      attackName?: string;
+      weaponItemId?: string;
+      targetTokenId: string;
+    }
+
+  // Игрок: вписать результат физического спасброска из очереди.
+  | { type: 'saveResult'; requestId: string; value: number }
+  // Игрок: кинуть спасбросок виртуально (сервер бросает d20).
+  | { type: 'saveRoll'; requestId: string }
+  // Мастер: кидает/вписывает спасбросок за монстра (или фолбэк за игрока).
+  // rolledValue опущен — сервер кинет d20 сам.
+  | { type: 'resolveSave'; requestId: string; rolledValue?: number }
+
+  // Отдых: короткий (кость хитов + ресурсы short) или длинный (полное
+  // восстановление). Заменяет прежние REST-кнопки CharacterSheet.
+  | { type: 'rest'; characterId: string; kind: 'short' | 'long' }
+
   // игрок с телефона: полный список предметов для инвентаря
   | { type: 'requestItems' };
 
@@ -64,6 +103,15 @@ export type ServerMsg =
   | { type: 'drawingsCleared'; mapId: string }
   | { type: 'combat'; combat: SessionState['combat'] }
   | { type: 'diceLog'; entry: DiceLogEntry } // скрытые броски шлются только роли dm
+
+  // ── Боевой движок (шаг 2) ──────────────────────────────────────────────
+
+  /** Структурное событие боя (фаза, участники, урон/крит/спас). Шлётся всем
+   *  в комнате; события со скрытыми токенами — только мастеру. */
+  | { type: 'combatEvent'; event: CombatEvent }
+  /** Новый запрос спасброска: адресно владельцу персонажа и мастеру
+   *  (за монстров всегда кидает мастер). */
+  | { type: 'saveRequest'; request: SaveRequest }
   | { type: 'characterUpdated'; character: Character }
   | { type: 'activeMap'; mapId: string }
   // ответ на requestItems (шлётся только запросившему клиенту)

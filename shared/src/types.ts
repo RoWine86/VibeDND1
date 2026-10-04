@@ -221,11 +221,16 @@ export interface Monster {
   imagePath?: string;
 
   // ── Монстры-заклинатели (ROADMAP, шаг 1) ─────────────────────────────────
-  // Только у явных кастеров; ячейки живут на монстре, а не на токене сессии.
+  // Только у явных кастеров; текущие ячейки живут на токене сессии, чтобы
+  // два одинаковых монстра тратили их раздельно (максимум — отсюда).
   /** id заклинаний из spells.json. */
   spells?: string[];
   /** Ячейки по уровням 1..9 (индекс 0 = уровень 1). */
   spellSlots?: { max: number[]; current: number[] };
+  /** Характеристика заклинаний монстра (СЛ и бонус атаки — от неё). */
+  spellcastingAbility?: Ability;
+  /** Уровень заклинателя монстра — для бонуса мастерства в СЛ/атаке. */
+  casterLevel?: number;
 }
 
 // ─── Персонаж ───────────────────────────────────────────────────────────────
@@ -377,6 +382,12 @@ export interface LiveToken {
   currentHp: number;
   maxHp: number;
   conditions: ConditionKey[];
+  // ячейки заклинаний монстра-кастера: живут на токене сессии, чтобы два
+  // одинаковых монстра тратили их раздельно (максимум — из Monster.spellSlots)
+  spellSlotsMax?: number[];
+  spellSlotsCurrent?: number[];
+  /** id заклинания, на котором токен держит концентрацию. */
+  concentratingOn?: string;
 }
 
 export interface InitiativeEntry {
@@ -393,6 +404,124 @@ export interface CombatState {
   round: number;
   entries: InitiativeEntry[];
   currentIndex: number;
+}
+
+// ─── Боевой движок (ROADMAP, шаг 2) ─────────────────────────────────────────
+
+/**
+ * Структурированное событие боя. Рассылается как ServerMsg 'combatEvent'
+ * и копится в session.combatLog (снапшот отдаёт лог целиком).
+ * Фаза задаёт смысл события; остальные поля заполняются по ситуации —
+ * клиенты (анимации шага 5, лог доски шага 4) читают только нужные.
+ */
+export type CombatEventPhase =
+  | 'cast'              // заклинание сотворено (до бросков урона/спасов)
+  | 'attack'            // бросок атаки по цели (попадание/промах/крит)
+  | 'damage'            // урон применён к цели
+  | 'heal'              // лечение применено
+  | 'save-request'      // создан запрос спасброска (ждёт в очереди)
+  | 'save-result'       // спасбросок разрешён
+  | 'concentration'     // авто-спас концентрации при уроне
+  | 'death'             // токен достиг 0 хитов
+  | 'rest';             // короткий/длинный отдых
+
+export interface CombatAttackRoll {
+  d20: number;
+  bonus: number;
+  total: number;
+  ac: number;
+  hit: boolean;
+  crit: boolean;   // натуральная 20: автопопадание, кости урона удвоены
+  fumble: boolean; // натуральная 1: автопромах
+}
+
+export interface CombatEvent {
+  id: string;
+  timestamp: number;
+  phase: CombatEventPhase;
+  // источник действия
+  sourceName: string;
+  sourceTokenId?: string;
+  sourceCharacterId?: string;
+  // цель (для событий по одной цели)
+  targetName?: string;
+  targetTokenId?: string;
+  targetCharacterId?: string;
+  // что применено
+  spellId?: string;
+  spellName?: string;
+  school?: SpellSchool; // цвет анимации заклинания (шаг 5)
+  attackName?: string;
+  slotLevel?: number;
+  // результаты бросков
+  attack?: CombatAttackRoll;
+  damage?: {
+    dice: string;
+    rolls: number[];
+    bonus: number;
+    total: number;      // итог до halved/применения
+    halved: boolean;    // урон уменьшен вдвое успешным спасом
+    applied: number;    // сколько реально списано хитов
+    damageType?: string;
+  };
+  heal?: { dice: string; rolls: number[]; bonus: number; total: number; applied: number };
+  save?: {
+    requestId?: string;
+    ability: Ability;
+    dc: number;
+    bonus: number;
+    d20?: number;        // нет, пока бросок не сделан
+    total?: number;
+    success?: boolean;
+    physical?: boolean;  // результат вписан с физического кубика
+  };
+  concentration?: {
+    spellId?: string;
+    spellName?: string;
+    dc: number;
+    d20: number;
+    bonus: number;
+    success: boolean;
+    lost: boolean; // концентрация снята
+  };
+  rest?: { kind: 'short' | 'long'; healed?: number; hitDieRoll?: number };
+  /** Человекочитаемая строка боевого лога (лента доски, шаг 4). */
+  text: string;
+}
+
+/**
+ * Запрос спасброска в очереди сессии. Кто кидает: монстров — мастер
+ * (rollerIsDm, resolveSave); персонажа — владелец (saveRoll/saveResult),
+ * мастер может вписать за игрока (фолбэк, тоже resolveSave).
+ * Урон уже вычислен и ждёт в pendingDamage (halfOnSuccess применится
+ * при разрешении).
+ */
+export interface SaveRequest {
+  id: string;
+  createdAt: number;
+  ability: Ability;
+  dc: number;
+  /** Бонус спасброска кидающего (профицит персонажа или бонус монстра). */
+  bonus: number;
+  halfOnSuccess: boolean;
+  // кто спасается
+  tokenId?: string;
+  characterId?: string;
+  rollerName: string;
+  rollerIsDm: boolean;
+  // отложенный урон
+  pendingDamage: {
+    dice: string;
+    rolls: number[];
+    total: number; // сумма до спасброска
+    damageType?: string;
+  };
+  // источник (лог и анимации)
+  sourceName: string;
+  sourceTokenId?: string;
+  sourceCharacterId?: string;
+  spellId?: string;
+  spellName?: string;
 }
 
 export interface DiceLogEntry {
@@ -418,6 +547,10 @@ export interface SessionState {
   combat: CombatState;
   characterIds: string[]; // партия
   diceLog: DiceLogEntry[];
+  /** Очередь ожидающих спасбросков (шаг 2). Пусто для старых снапшотов. */
+  saveRequests?: SaveRequest[];
+  /** Лента структурных событий боя; старые сессии могут её не иметь. */
+  combatLog?: CombatEvent[];
   createdAt: string;
   updatedAt: string;
 }
