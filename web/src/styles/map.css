@@ -769,3 +769,25 @@
 .board-event.phase-death { border-color: var(--crimson); }
 .board-event.phase-death .board-event-text { color: #ff9a9a; font-weight: 700; }
 .board-event.phase-heal .board-event-text { color: var(--hp-green); }
+
+/* Переключатель анимаций боя на доске (шаг 5) */
+.board-anim-toggle {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: rgba(30, 24, 48, 0.9);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 14px;
+}
+.board-anim-toggle.on {
+  border-color: var(--gold);
+  color: var(--gold-bright);
+}
+.board-anim-toggle:hover { background: var(--bg-raised); }

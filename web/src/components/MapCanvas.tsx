@@ -1,8 +1,9 @@
 // ─── MapCanvas: переиспользуемый canvas-рендер карты VibeDND ───────────────
 // Слои (снизу вверх): изображение карты → сетка по MapCalibration → токены →
-// рисунки (DrawStroke) → туман войны. Панорама (drag) и зум (колесо).
-// Режим 'board' — только просмотр (скрытые токены не рисуются, туман глухой).
-// Режим 'dm' — инструменты: перемещение токенов, туман, рисование, измерение.
+// боевые эффекты (fx) → рисунки (DrawStroke) → туман войны. Панорама (drag)
+// и зум (колесо). Режим 'board' — только просмотр (скрытые токены не
+// рисуются, туман глухой). Режим 'dm' — инструменты: перемещение токенов,
+// туман, рисование, измерение.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
@@ -23,6 +24,7 @@ import {
 import type {
   AdventureMap,
   Character,
+  CombatEvent,
   ConditionKey,
   DrawShape,
   DrawStroke,
@@ -67,6 +69,10 @@ export interface MapCanvasProps {
   /** Клик по карте без перетаскивания (координаты в клетках сетки).
    *  Используется мастером для размещения нового токена. */
   onMapClick?: (x: number, y: number) => void;
+  /** Лента событий боя — источник анимаций слоя fx (шаг 5). */
+  combatEvents?: CombatEvent[];
+  /** Включены ли анимации боя (переключатель на доске, localStorage). */
+  animationsEnabled?: boolean;
   /** Тулбар инструментов (только режим dm). По умолчанию виден. */
   showToolbar?: boolean;
   /** Начальная активная вкладка тулбара. По умолчанию 'draw'. */
@@ -303,6 +309,201 @@ function drawFog(
   ctx.restore();
 }
 
+// ─── Слой боевых эффектов (fx, шаг 5) ───────────────────────────────────────
+// Эффекты живут в ref-списке, у каждого есть время жизни; по завершении
+// удаляется. Хореография: cast — снаряд/взмах/луч ~0,4 с сразу по получении
+// события; попадание — вспышка + всплывающая цифра; крит — золото и крупная
+// цифра; промах — серое «мимо»; спас — щит; лечение — зелёное; смерть —
+// затухание токена к ☠. Библиотек и звука нет.
+
+/** Жёсткий лимит одновременных эффектов — деградируем, не роняя FPS. */
+const MAX_FX = 20;
+/** Лимит частиц в одной вспышке. */
+const MAX_PARTICLES = 8;
+
+type FxKind = 'projectile' | 'swing' | 'flash' | 'text' | 'shield' | 'sparkle';
+
+interface Fx {
+  kind: FxKind;
+  start: number;
+  dur: number;
+  /** точка воздействия (цель), в координатах карты */
+  x: number;
+  y: number;
+  /** начало полёта (projectile) */
+  x0?: number;
+  y0?: number;
+  color: string;
+  text?: string;
+  big?: boolean;
+  /** частицы вспышки: смещения и скорости, не более MAX_PARTICLES */
+  particles?: { dx: number; dy: number }[];
+}
+
+/** Цвет эффекта по школе и типу урона (ROADMAP, шаг 5). */
+function fxColor(ev: CombatEvent): string {
+  const dt = ev.damage?.damageType ?? '';
+  if (/огон|плам|fire/i.test(dt)) return '#ff7a29';      // огонь — оранжевый
+  if (/холод|лёд|лед|cold/i.test(dt)) return '#4fc3f7';  // холод — голубой
+  if (/электр|молни|light/i.test(dt)) return '#ffe14d';  // молния — жёлтая
+  if (ev.school === 'necromancy') return '#b06fd4';      // некротика — фиолетовый
+  return '#f0c948';                                       // остальное — золото
+}
+
+const easeOut = (k: number) => 1 - (1 - k) * (1 - k);
+
+function drawFxLayer(ctx: CanvasRenderingContext2D, fxList: Fx[], now: number, cell: number): void {
+  for (let i = fxList.length - 1; i >= 0; i--) {
+    const fx = fxList[i]!;
+    const k = (now - fx.start) / fx.dur;
+    if (k >= 1) {
+      fxList.splice(i, 1); // эффект завершён — удаляем из отрисовки
+      continue;
+    }
+    if (k < 0) continue; // эффект с задержкой — ещё не начался
+    ctx.save();
+    switch (fx.kind) {
+      case 'projectile': {
+        const t = easeOut(k);
+        const px = fx.x0! + (fx.x - fx.x0!) * t;
+        const py = fx.y0! + (fx.y - fx.y0!) * t;
+        // хвост
+        ctx.strokeStyle = fx.color;
+        ctx.globalAlpha = 0.5 * (1 - k);
+        ctx.lineWidth = Math.max(2, cell * 0.08);
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(fx.x0!, fx.y0!);
+        ctx.lineTo(px, py);
+        ctx.stroke();
+        // ядро снаряда
+        ctx.globalAlpha = 1 - k * 0.3;
+        const r = Math.max(3, cell * 0.14);
+        const grad = ctx.createRadialGradient(px, py, 0, px, py, r * 2.2);
+        grad.addColorStop(0, '#ffffff');
+        grad.addColorStop(0.4, fx.color);
+        grad.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(px, py, r * 2.2, 0, Math.PI * 2);
+        ctx.fill();
+        break;
+      }
+      case 'swing': {
+        // дуга взмаха у цели
+        const t = easeOut(k);
+        ctx.globalAlpha = 0.85 * (1 - k);
+        ctx.strokeStyle = fx.color;
+        ctx.lineWidth = Math.max(2.5, cell * 0.1);
+        ctx.lineCap = 'round';
+        const r = cell * (0.5 + t * 0.35);
+        ctx.beginPath();
+        ctx.arc(fx.x, fx.y, r, -Math.PI * 0.75 + t * 0.9, Math.PI * 0.15 + t * 0.9);
+        ctx.stroke();
+        break;
+      }
+      case 'flash': {
+        const t = easeOut(k);
+        const r = cell * (fx.big ? 0.9 : 0.6) * (0.4 + t);
+        ctx.globalAlpha = 0.9 * (1 - k);
+        const grad = ctx.createRadialGradient(fx.x, fx.y, 0, fx.x, fx.y, r);
+        grad.addColorStop(0, '#ffffff');
+        grad.addColorStop(0.35, fx.color);
+        grad.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(fx.x, fx.y, r, 0, Math.PI * 2);
+        ctx.fill();
+        if (fx.big) {
+          // крит: золотое кольцо
+          ctx.globalAlpha = 1 - k;
+          ctx.strokeStyle = '#f0c948';
+          ctx.lineWidth = Math.max(2, cell * 0.09);
+          ctx.beginPath();
+          ctx.arc(fx.x, fx.y, cell * (0.6 + t * 0.8), 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        // частицы
+        if (fx.particles) {
+          ctx.fillStyle = fx.color;
+          for (const p of fx.particles) {
+            ctx.globalAlpha = 0.8 * (1 - k);
+            const px = fx.x + p.dx * cell * t * 1.4;
+            const py = fx.y + p.dy * cell * t * 1.4;
+            ctx.beginPath();
+            ctx.arc(px, py, Math.max(1.5, cell * 0.05) * (1 - k * 0.6), 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+        break;
+      }
+      case 'text': {
+        // всплывающая цифра
+        const t = easeOut(k);
+        const fontPx = fx.big ? cell * 0.95 : cell * 0.62;
+        const ty = fx.y - cell * 0.4 - t * cell * 1.1;
+        ctx.globalAlpha = k < 0.75 ? 1 : 1 - (k - 0.75) / 0.25;
+        ctx.font = `900 ${fontPx}px "Cinzel", serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.lineWidth = Math.max(2, fontPx * 0.16);
+        ctx.strokeStyle = 'rgba(10, 8, 16, 0.9)';
+        ctx.strokeText(fx.text!, fx.x, ty);
+        ctx.fillStyle = fx.color;
+        ctx.fillText(fx.text!, fx.x, ty);
+        break;
+      }
+      case 'shield': {
+        // символ щита у цели (спасбросок)
+        const pulse = Math.sin(k * Math.PI);
+        const h = cell * (0.7 + pulse * 0.25);
+        ctx.globalAlpha = 0.35 + 0.55 * (1 - k);
+        ctx.fillStyle = fx.color;
+        ctx.strokeStyle = '#e8e2d5';
+        ctx.lineWidth = Math.max(1.5, cell * 0.05);
+        ctx.beginPath();
+        ctx.moveTo(fx.x, fx.y - h * 0.6);
+        ctx.lineTo(fx.x + h * 0.5, fx.y - h * 0.32);
+        ctx.lineTo(fx.x + h * 0.5, fx.y + h * 0.12);
+        ctx.quadraticCurveTo(fx.x, fx.y + h * 0.62, fx.x - h * 0.5, fx.y + h * 0.12);
+        ctx.lineTo(fx.x - h * 0.5, fx.y - h * 0.32);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        break;
+      }
+      case 'sparkle': {
+        // служебный каст: золотые искры у источника
+        const t = easeOut(k);
+        ctx.globalAlpha = 0.8 * (1 - k);
+        ctx.fillStyle = fx.color;
+        const n = fx.particles?.length ?? 0;
+        for (let j = 0; j < n; j++) {
+          const p = fx.particles![j]!;
+          const px = fx.x + p.dx * cell * t;
+          const py = fx.y + p.dy * cell * t - t * cell * 0.4;
+          ctx.beginPath();
+          ctx.arc(px, py, Math.max(1.5, cell * 0.06) * (1 - k * 0.5), 0, Math.PI * 2);
+          ctx.fill();
+        }
+        break;
+      }
+    }
+    ctx.restore();
+  }
+}
+
+function makeParticles(n: number): { dx: number; dy: number }[] {
+  const count = Math.min(n, MAX_PARTICLES);
+  const out: { dx: number; dy: number }[] = [];
+  for (let i = 0; i < count; i++) {
+    const a = (i / count) * Math.PI * 2 + Math.random();
+    const d = 0.5 + Math.random() * 0.5;
+    out.push({ dx: Math.cos(a) * d, dy: Math.sin(a) * d });
+  }
+  return out;
+}
+
 // ─── Компонент ──────────────────────────────────────────────────────────────
 
 export default function MapCanvas(props: MapCanvasProps) {
@@ -322,6 +523,8 @@ export default function MapCanvas(props: MapCanvasProps) {
     onClearDrawings,
     showToolbar = true,
     defaultPanel = 'draw',
+    combatEvents,
+    animationsEnabled = true,
   } = props;
 
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -373,6 +576,149 @@ export default function MapCanvas(props: MapCanvasProps) {
   tokensRef.current = tokens;
 
   const requestRender = useCallback(() => setRenderTick((t) => t + 1), []);
+
+  // ── Слой fx: боевые эффекты (шаг 5) ───────────────────────────────────────
+
+  const fxRef = useRef<Fx[]>([]);
+  const rafRef = useRef<number | null>(null);
+  const processedEventsRef = useRef<Set<string>>(new Set());
+  // затухание токена к ☠ после смерти: tokenId → время старта
+  const deathFadeRef = useRef<Map<string, number>>(new Map());
+
+  const animEnabledRef = useRef(animationsEnabled);
+  animEnabledRef.current = animationsEnabled;
+
+  /** Центр токена в координатах карты. */
+  const tokenCenter = useCallback((tokenId: string | undefined): { x: number; y: number } | null => {
+    if (!tokenId) return null;
+    const m = mapRef.current;
+    const t = tokensRef.current.find((tk) => tk.id === tokenId);
+    if (!m || !t) return null;
+    const cell = m.grid.cellSize;
+    return {
+      x: m.grid.originX + (t.x + t.sizeCells / 2) * cell,
+      y: m.grid.originY + (t.y + t.sizeCells / 2) * cell,
+    };
+  }, []);
+
+  const pushFx = useCallback((fx: Fx) => {
+    // жёсткий лимит: если список полон — вытесняем самый старый
+    if (fxRef.current.length >= MAX_FX) fxRef.current.shift();
+    fxRef.current.push(fx);
+  }, []);
+
+  /** Превращает событие боя в набор эффектов (cast-фаза — сразу). */
+  const spawnFromEvent = useCallback((ev: CombatEvent) => {
+    if (!animEnabledRef.current) return;
+    const cell = mapRef.current?.grid.cellSize ?? 30;
+    const color = fxColor(ev);
+    const target = tokenCenter(ev.targetTokenId);
+    const source = tokenCenter(ev.sourceTokenId);
+
+    if (ev.phase === 'cast') {
+      // cast-фаза проигрывается сразу по получению. У событий cast нет цели
+      // (цель приходит в attack/save-result), поэтому: у заклинаний — вспышка
+      // школы у источника, у служебных — золотые искры.
+      if (source) {
+        pushFx({
+          kind: ev.spellId ? 'flash' : 'sparkle',
+          start: performance.now(),
+          dur: ev.spellId ? 350 : 500,
+          x: source.x,
+          y: source.y,
+          color: ev.spellId ? color : '#f0c948',
+          particles: makeParticles(6),
+        });
+      }
+      return;
+    }
+
+    if (ev.phase === 'attack' && target) {
+      const t0 = performance.now();
+      const crit = ev.attack?.crit === true;
+      // снаряд/взмах летит от источника ~0,4 с, затем фаза попадания
+      if (source) {
+        pushFx({
+          kind: ev.spellId ? 'projectile' : 'swing',
+          start: t0,
+          dur: 400,
+          x: target.x,
+          y: target.y,
+          x0: source.x,
+          y0: source.y,
+          color,
+        });
+      }
+      const impactAt = source ? t0 + 380 : t0;
+      if (ev.attack && !ev.attack.hit) {
+        pushFx({ kind: 'text', start: impactAt, dur: 900, x: target.x, y: target.y, color: '#9a90b8', text: 'мимо' });
+        return;
+      }
+      pushFx({ kind: 'flash', start: impactAt, dur: 420, x: target.x, y: target.y, color: crit ? '#f0c948' : color, big: crit, particles: makeParticles(crit ? 8 : 5) });
+      if (ev.damage && ev.damage.applied > 0) {
+        pushFx({ kind: 'text', start: impactAt + 120, dur: 1000, x: target.x, y: target.y, color: crit ? '#f0c948' : '#ff6b5a', text: `${crit ? '✦' : ''}${ev.damage.applied}`, big: crit });
+      }
+      return;
+    }
+
+    if (ev.phase === 'heal' && target) {
+      pushFx({ kind: 'flash', start: performance.now(), dur: 500, x: target.x, y: target.y, color: '#4caf6d', particles: makeParticles(5) });
+      if (ev.heal && ev.heal.applied > 0) {
+        pushFx({ kind: 'text', start: performance.now() + 100, dur: 1000, x: target.x, y: target.y, color: '#4caf6d', text: `+${ev.heal.applied}` });
+      }
+      return;
+    }
+
+    if (ev.phase === 'save-result' && target) {
+      pushFx({ kind: 'shield', start: performance.now(), dur: 700, x: target.x, y: target.y, color: ev.save?.success ? '#4caf6d' : '#c9403b' });
+      // урон по проваленному спасу — отдельно
+      if (ev.damage && ev.damage.applied > 0) {
+        pushFx({ kind: 'text', start: performance.now() + 150, dur: 1000, x: target.x, y: target.y, color: '#ff6b5a', text: `${ev.damage.applied}` });
+      }
+      return;
+    }
+
+    if (ev.phase === 'death' && ev.targetTokenId) {
+      deathFadeRef.current.set(ev.targetTokenId, performance.now());
+      return;
+    }
+  }, [pushFx, tokenCenter]);
+
+  // подписка на новые события боя
+  useEffect(() => {
+    if (!combatEvents) return;
+    const seen = processedEventsRef.current;
+    for (const ev of combatEvents) {
+      if (seen.has(ev.id)) continue;
+      seen.add(ev.id);
+      spawnFromEvent(ev);
+    }
+    // чистим отметки обработанных, чтобы Set не рос бесконечно
+    if (seen.size > 400) {
+      const recent = new Set(combatEvents.slice(-200).map((e) => e.id));
+      processedEventsRef.current = recent;
+    }
+  }, [combatEvents, spawnFromEvent]);
+
+  // rAF-петля: работает только пока есть активные эффекты
+  useEffect(() => {
+    const tick = () => {
+      rafRef.current = null;
+      if (fxRef.current.length > 0 || deathFadeRef.current.size > 0) {
+        requestRender();
+        rafRef.current = requestAnimationFrame(tick);
+      }
+    };
+    if ((fxRef.current.length > 0 || deathFadeRef.current.size > 0) && rafRef.current === null) {
+      rafRef.current = requestAnimationFrame(tick);
+    }
+    return () => {
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+    };
+  });
 
   // ── Загрузка изображений ────────────────────────────────────────────────
 
@@ -727,6 +1073,17 @@ export default function MapCanvas(props: MapCanvasProps) {
         }
       }
 
+      // затухание к ☠ после смерти (событие death, шаг 5)
+      const fadeStart = deathFadeRef.current.get(t.id);
+      if (fadeStart !== undefined) {
+        const k = (now - fadeStart) / 900;
+        if (k >= 1) {
+          deathFadeRef.current.delete(t.id);
+        } else {
+          alpha *= 0.35 + 0.65 * (1 - k);
+        }
+      }
+
       ctx.save();
       ctx.globalAlpha = mode === 'dm' && t.hidden ? 0.5 : alpha;
       const ring = KIND_COLORS[t.kind];
@@ -826,7 +1183,12 @@ export default function MapCanvas(props: MapCanvasProps) {
       ctx.restore();
     }
 
-    // 4. рисунки
+    // 4. боевые эффекты (fx) — поверх токенов, под рисунками
+    if (animEnabledRef.current && fxRef.current.length > 0) {
+      drawFxLayer(ctx, fxRef.current, now, cell);
+    }
+
+    // 5. рисунки
     for (const s of drawings) drawStrokeShape(ctx, s.shape);
 
     // превью текущего штриха во время рисования
@@ -855,7 +1217,7 @@ export default function MapCanvas(props: MapCanvasProps) {
       }
     }
 
-    // 5. туман войны
+    // 6. туман войны
     drawFog(ctx, map, fogReveals, mode);
 
     // превью тумана во время выделения
@@ -884,7 +1246,7 @@ export default function MapCanvas(props: MapCanvasProps) {
       ctx.restore();
     }
 
-    // 6. измерение радиуса (поверх всего, не сохраняется)
+    // 7. измерение радиуса (поверх всего, не сохраняется)
     if (it && it.kind === 'measure' && it.moved) {
       const radius = Math.hypot(it.lastMap.x - it.startMap.x, it.lastMap.y - it.startMap.y);
       const feet = Math.round(radius / cell) * FEET_PER_CELL;

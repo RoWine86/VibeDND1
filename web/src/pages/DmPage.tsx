@@ -432,6 +432,7 @@ function DmConsole({ onPickSession }: { onPickSession: (id: string) => void }) {
           drawings={drawings}
           mode="dm"
           characters={characters}
+          combatEvents={store.combatEvents}
           onTokenMove={onTokenMove}
           onFog={onFog}
           onFogReset={() => map && emit({ type: 'fogReset', mapId: map.id })}

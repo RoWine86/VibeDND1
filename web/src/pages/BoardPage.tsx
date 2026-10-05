@@ -5,7 +5,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Dices, QrCode, Users } from 'lucide-react';
+import { Dices, QrCode, Sparkles, Users } from 'lucide-react';
 import type { Adventure } from '@vibednd/shared';
 import { SessionProvider, useSessionStore } from '../sessionStore';
 import { api } from '../api';
@@ -371,6 +371,13 @@ function BoardContent({ sessionId }: { sessionId: string }) {
   const { session, characters, combatEvents, error } = useSessionStore();
   const [adventure, setAdventure] = useState<Adventure | null>(null);
   const [joinUrl, setJoinUrl] = useState('');
+  // анимации боя (шаг 5): настройка доски сохраняется в localStorage
+  const [animations, setAnimations] = useState(
+    () => localStorage.getItem('vibednd.boardAnimations') !== '0',
+  );
+  useEffect(() => {
+    localStorage.setItem('vibednd.boardAnimations', animations ? '1' : '0');
+  }, [animations]);
   // Доска реагирует только на «Сессия не найдена» — прочие ошибки сервера
   // на чистом экране не показываются (прежнее поведение).
   const fatal = error === 'Сессия не найдена' ? error : '';
@@ -455,7 +462,16 @@ function BoardContent({ sessionId }: { sessionId: string }) {
           drawings={drawings}
           mode="board"
           characters={characters}
+          combatEvents={combatEvents}
+          animationsEnabled={animations}
         />
+        <button
+          className={`board-anim-toggle${animations ? ' on' : ''}`}
+          title="Анимации боя"
+          onClick={() => setAnimations((v) => !v)}
+        >
+          <Sparkles size={16} /> Анимации
+        </button>
       </div>
 
       {/* Нижняя лента: в бою — структурированные события, иначе последние броски */}
