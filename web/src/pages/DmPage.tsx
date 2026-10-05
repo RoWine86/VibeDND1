@@ -10,24 +10,32 @@ import {
   Eye,
   EyeOff,
   Flag,
+  MapPin,
   Map as MapIcon,
   Minus,
   NotebookPen,
   Play,
   Plus,
+  ShieldAlert,
   SkipForward,
+  Sparkles,
   Swords,
   Users,
   X,
+  Zap,
 } from 'lucide-react';
 import type {
+  Ability,
   Adventure,
   ConditionKey,
   DiceLogEntry,
   DrawShape,
   FogShape,
   LiveToken,
+  Monster,
+  SaveRequest,
   SessionState,
+  Spell,
   TokenKind,
 } from '@vibednd/shared';
 import { abilityModifier, effectiveScores, CONDITION_NAMES_RU } from '@vibednd/shared';
@@ -47,6 +55,15 @@ interface SetupRow {
   tokenId?: string;
   characterId?: string;
   kind: TokenKind;
+}
+
+/** Заготовка токена, который мастер размещает кликом по карте. */
+interface PlacingToken {
+  kind: TokenKind;
+  name: string;
+  monsterId?: string;
+  maxHp: number;
+  sizeCells: number;
 }
 
 const KIND_LABEL: Record<TokenKind, string> = {
@@ -117,7 +134,7 @@ export default function DmPage() {
 
 function DmConsole({ onPickSession }: { onPickSession: (id: string) => void }) {
   const store = useSessionStore();
-  const { session, characters } = store;
+  const { session, characters, saveRequests } = store;
   const [adventure, setAdventure] = useState<Adventure | null>(null);
   const [loadError, setLoadError] = useState('');
   // ошибка WS (например, сохранённая сессия удалена) или локальная ошибка API
@@ -126,6 +143,17 @@ function DmConsole({ onPickSession }: { onPickSession: (id: string) => void }) {
   // панель
   const [tab, setTab] = useState<'tokens' | 'combat' | 'notes'>('tokens');
   const [selectedTokenId, setSelectedTokenId] = useState<string | null>(null);
+
+  // справочники монстров и заклинаний (атаки/заклинания токенов)
+  const [monsters, setMonsters] = useState<Monster[]>([]);
+  const [spells, setSpells] = useState<Spell[]>([]);
+  useEffect(() => {
+    api.get<Monster[]>('/entities/monster').then(setMonsters).catch(() => setMonsters([]));
+    api.get<Spell[]>('/entities/spell').then(setSpells).catch(() => setSpells([]));
+  }, []);
+
+  // размещение нового токена кликом по карте
+  const [placing, setPlacing] = useState<PlacingToken | null>(null);
 
   // инициатива
   const [setupRows, setSetupRows] = useState<SetupRow[] | null>(null);
@@ -179,6 +207,23 @@ function DmConsole({ onPickSession }: { onPickSession: (id: string) => void }) {
     [adventure, map?.id],
   );
   const selectedToken = mapTokens.find((t) => t.id === selectedTokenId) ?? null;
+  const monsterById = useMemo(() => new Map(monsters.map((m) => [m.id, m])), [monsters]);
+  const spellById = useMemo(() => new Map(spells.map((s) => [s.id, s])), [spells]);
+  const selectedMonster = selectedToken?.monsterId
+    ? monsterById.get(selectedToken.monsterId)
+    : undefined;
+
+  // Цели для атак/заклинаний монстра: токены партии на активной карте
+  const partyTargets = useMemo(
+    () => mapTokens.filter((t) => t.kind === 'player'),
+    [mapTokens],
+  );
+  // Цели для враждебных заклинаний по выбору мастера — любые токены карты
+  // (кроме самого кастующего)
+  const allTargets = useMemo(
+    () => mapTokens.filter((t) => t.id !== selectedTokenId),
+    [mapTokens, selectedTokenId],
+  );
 
   // ── Действия (отправка в сокет через стор; состояние придёт рассылкой) ───
 
@@ -207,6 +252,58 @@ function DmConsole({ onPickSession }: { onPickSession: (id: string) => void }) {
       ? token.conditions.filter((c) => c !== cond)
       : [...token.conditions, cond];
     emit({ type: 'setTokenConditions', tokenId: token.id, conditions: next });
+  };
+
+  // ── Добавление токена: заготовка → клик по карте ────────────────────────
+
+  const placeTokenAt = (x: number, y: number) => {
+    if (!placing || !map) return;
+    emit({
+      type: 'addToken',
+      token: {
+        mapId: map.id,
+        kind: placing.kind,
+        name: placing.name,
+        monsterId: placing.monsterId,
+        x,
+        y,
+        sizeCells: placing.sizeCells,
+        hidden: placing.kind === 'enemy',
+        currentHp: placing.maxHp,
+        maxHp: placing.maxHp,
+        conditions: [],
+      },
+    });
+    setPlacing(null);
+  };
+
+  // ── Атаки и заклинания выбранного монстра ───────────────────────────────
+
+  const monsterAttack = (attackName: string, targetTokenId: string) => {
+    if (!selectedToken) return;
+    emit({
+      type: 'attackWith',
+      attackerTokenId: selectedToken.id,
+      attackName,
+      targetTokenId,
+    });
+  };
+
+  const monsterCast = (spellId: string, slotLevel: number, targetTokenIds: string[]) => {
+    if (!selectedToken) return;
+    emit({
+      type: 'castSpell',
+      tokenId: selectedToken.id,
+      spellId,
+      slotLevel,
+      targetTokenIds,
+    });
+  };
+
+  // ── Спасброски из очереди (за монстров или фолбэк за игрока) ────────────
+
+  const resolveSave = (req: SaveRequest, rolledValue?: number) => {
+    emit({ type: 'resolveSave', requestId: req.id, rolledValue });
   };
 
   // ── Инициатива ───────────────────────────────────────────────────────────
@@ -342,7 +439,16 @@ function DmConsole({ onPickSession }: { onPickSession: (id: string) => void }) {
           onDraw={(shape: DrawShape) => map && emit({ type: 'draw', stroke: { mapId: map.id, shape } })}
           onErase={(strokeId) => emit({ type: 'eraseStroke', strokeId })}
           onClearDrawings={() => map && emit({ type: 'clearDrawings', mapId: map.id })}
+          onMapClick={placing ? placeTokenAt : undefined}
         />
+        {placing && (
+          <div className="dm-placing-hint anim-fade-in">
+            <MapPin size={14} /> Кликните по карте, чтобы разместить: {placing.name}
+            <button className="dm-btn" onClick={() => setPlacing(null)}>
+              <X size={13} /> Отмена
+            </button>
+          </div>
+        )}
       </div>
 
       <aside className="dm-panel">
@@ -396,6 +502,7 @@ function DmConsole({ onPickSession }: { onPickSession: (id: string) => void }) {
           </button>
           <button className={`dm-tab${tab === 'combat' ? ' active' : ''}`} onClick={() => setTab('combat')}>
             <Swords size={14} /> Бой
+            {saveRequests.length > 0 && <span className="dm-badge">{saveRequests.length}</span>}
           </button>
           <button className={`dm-tab${tab === 'notes' ? ' active' : ''}`} onClick={() => setTab('notes')}>
             <NotebookPen size={14} /> Заметки
@@ -405,6 +512,14 @@ function DmConsole({ onPickSession }: { onPickSession: (id: string) => void }) {
         {/* ── Токены ── */}
         {tab === 'tokens' && (
           <div className="dm-scroll">
+            <AddTokenForm
+              monsters={monsters}
+              disabled={!map || placing !== null}
+              onPlace={(t) => {
+                setPlacing(t);
+                setTab('tokens');
+              }}
+            />
             {mapTokens.length === 0 && (
               <p className="dm-dim">На активной карте нет токенов.</p>
             )}
@@ -462,6 +577,37 @@ function DmConsole({ onPickSession }: { onPickSession: (id: string) => void }) {
                   <strong>{selectedToken.name}</strong>
                   <span className="dm-dim">{KIND_LABEL[selectedToken.kind]}</span>
                 </div>
+
+                {/* Атаки монстра: выбор цели из токенов партии */}
+                {(selectedMonster?.attacks.length ?? 0) > 0 && (
+                  <div className="dm-field">
+                    <label><Swords size={13} /> Атака</label>
+                    {partyTargets.length === 0 ? (
+                      <p className="dm-dim">На карте нет токенов партии.</p>
+                    ) : (
+                      selectedMonster!.attacks.map((a) => (
+                        <MonsterAttackRow
+                          key={a.name}
+                          attack={a}
+                          targets={partyTargets}
+                          onAttack={(targetId) => monsterAttack(a.name, targetId)}
+                        />
+                      ))
+                    )}
+                  </div>
+                )}
+
+                {/* Заклинания монстра-кастера */}
+                {(selectedMonster?.spells?.length ?? 0) > 0 && (
+                  <MonsterSpells
+                    token={selectedToken}
+                    monster={selectedMonster!}
+                    spellById={spellById}
+                    targets={allTargets}
+                    onCast={monsterCast}
+                  />
+                )}
+
                 <div className="dm-field">
                   <label>HP: быстрый урон / лечение</label>
                   <div className="dm-hp-btns">
@@ -587,6 +733,20 @@ function DmConsole({ onPickSession }: { onPickSession: (id: string) => void }) {
               </>
             )}
 
+            {/* Очередь спасбросков */}
+            {saveRequests.length > 0 && (
+              <div className="dm-section dm-save-queue">
+                <div className="dm-field">
+                  <label>
+                    <ShieldAlert size={14} /> Спасброски в очереди ({saveRequests.length})
+                  </label>
+                </div>
+                {saveRequests.map((req) => (
+                  <SaveQueueRow key={req.id} request={req} onResolve={resolveSave} />
+                ))}
+              </div>
+            )}
+
             {/* Скрытые броски мастера */}
             <div className="dm-section dm-hidden-roll">
               <div className="dm-field">
@@ -649,6 +809,330 @@ function DmConsole({ onPickSession }: { onPickSession: (id: string) => void }) {
           </div>
         )}
       </aside>
+    </div>
+  );
+}
+
+// ─── Добавление токена (враг из библиотеки / НПС / свободный) ───────────────
+
+function AddTokenForm({
+  monsters, disabled, onPlace,
+}: {
+  monsters: Monster[];
+  disabled: boolean;
+  onPlace: (t: PlacingToken) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [monsterId, setMonsterId] = useState('');
+  const [customName, setCustomName] = useState('');
+  const [customHp, setCustomHp] = useState('1');
+
+  const chosen = monsters.find((m) => m.id === monsterId);
+
+  if (!open) {
+    return (
+      <button className="dm-btn dm-wide" style={{ marginBottom: 10 }} disabled={disabled} onClick={() => setOpen(true)}>
+        <Plus size={14} /> Добавить токен
+      </button>
+    );
+  }
+  return (
+    <div className="dm-add-token anim-fade-in">
+      <div className="dm-field">
+        <label><Swords size={13} /> Враг из библиотеки монстров</label>
+        <select value={monsterId} onChange={(e) => setMonsterId(e.target.value)}>
+          <option value="">— выберите монстра —</option>
+          {[...monsters].sort((a, b) => a.nameRu.localeCompare(b.nameRu)).map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.nameRu} (ПО {m.challengeRating}, {m.hitPoints} HP)
+            </option>
+          ))}
+        </select>
+        {chosen && (
+          <button
+            className="primary dm-wide"
+            onClick={() => onPlace({
+              kind: 'enemy',
+              name: chosen.nameRu,
+              monsterId: chosen.id,
+              maxHp: chosen.hitPoints,
+              // укрупнение по размеру: S/M = 1 клетка, L = 2, H = 3, G = 4
+              sizeCells: chosen.size === 'L' ? 2 : chosen.size === 'H' ? 3 : chosen.size === 'G' ? 4 : 1,
+            })}
+          >
+            <MapPin size={14} /> Разместить кликом по карте
+          </button>
+        )}
+      </div>
+      <div className="dm-field">
+        <label>НПС или свободный токен</label>
+        <input value={customName} onChange={(e) => setCustomName(e.target.value)} placeholder="Имя (например, Торговец)" />
+        <div className="dm-hp-btns">
+          <input
+            type="number"
+            min={0}
+            value={customHp}
+            onChange={(e) => setCustomHp(e.target.value)}
+            placeholder="HP"
+            style={{ width: 70 }}
+          />
+          <button
+            className="primary"
+            disabled={!customName.trim()}
+            onClick={() => onPlace({
+              kind: 'npc',
+              name: customName.trim(),
+              maxHp: Math.max(0, parseInt(customHp, 10) || 0),
+              sizeCells: 1,
+            })}
+          >
+            <MapPin size={14} /> Разместить
+          </button>
+        </div>
+      </div>
+      <button className="dm-btn dm-wide" onClick={() => setOpen(false)}>Закрыть</button>
+    </div>
+  );
+}
+
+// ─── Атака монстра: выбор цели ──────────────────────────────────────────────
+
+function MonsterAttackRow({
+  attack, targets, onAttack,
+}: {
+  attack: { name: string; attackBonus: number; damageDice: string; damageBonus: number; damageType: string };
+  targets: LiveToken[];
+  onAttack: (targetTokenId: string) => void;
+}) {
+  const [targetId, setTargetId] = useState('');
+  return (
+    <div className="dm-attack-row">
+      <div className="dm-attack-info">
+        {attack.name}{' '}
+        <span className="dm-dim">
+          {fmtMod(attack.attackBonus)} · {attack.damageDice}{attack.damageBonus ? fmtMod(attack.damageBonus) : ''} {attack.damageType}
+        </span>
+      </div>
+      <div className="dm-attack-pick">
+        <select value={targetId} onChange={(e) => setTargetId(e.target.value)}>
+          <option value="">Цель…</option>
+          {targets.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.name || 'Безымянный'} ({t.currentHp}/{t.maxHp})
+            </option>
+          ))}
+        </select>
+        <button className="primary" disabled={!targetId} onClick={() => onAttack(targetId)}>
+          <Swords size={13} /> Атака
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Заклинания монстра-кастера ─────────────────────────────────────────────
+
+const SAVE_ABILITY_GEN: Record<Ability, string> = {
+  str: 'Силы', dex: 'Ловкости', con: 'Телосложения', int: 'Интеллекта', wis: 'Мудрости', cha: 'Харизмы',
+};
+
+function MonsterSpells({
+  token, monster, spellById, targets, onCast,
+}: {
+  token: LiveToken;
+  monster: Monster;
+  spellById: Map<string, Spell>;
+  targets: LiveToken[];
+  onCast: (spellId: string, slotLevel: number, targetTokenIds: string[]) => void;
+}) {
+  const [openSpellId, setOpenSpellId] = useState<string | null>(null);
+  const slotsMax = token.spellSlotsMax ?? monster.spellSlots?.max ?? [];
+  const slotsCur = token.spellSlotsCurrent ?? slotsMax;
+  const abilityName = monster.spellcastingAbility
+    ? SAVE_ABILITY_GEN[monster.spellcastingAbility]
+    : undefined;
+
+  const known = (monster.spells ?? [])
+    .map((id) => spellById.get(id))
+    .filter((s): s is Spell => Boolean(s))
+    .sort((a, b) => a.level - b.level || a.nameRu.localeCompare(b.nameRu));
+  if (known.length === 0) return null;
+
+  return (
+    <div className="dm-field">
+      <label><Sparkles size={13} /> Заклинания{abilityName ? ` (${abilityName})` : ''}</label>
+      {slotsMax.some((n) => n > 0) && (
+        <div className="dm-slot-pips">
+          {slotsMax.map((max, idx) =>
+            max > 0 ? (
+              <span key={idx} className="dm-dim">
+                {idx + 1} ур.: {slotsCur[idx] ?? 0}/{max}
+              </span>
+            ) : null,
+          )}
+        </div>
+      )}
+      {known.map((spell) => {
+        const isCantrip = spell.level === 0;
+        const hasSlot = isCantrip
+          || slotsMax.some((_, i) => i + 1 >= spell.level && (slotsCur[i] ?? 0) > 0);
+        return (
+          <MonsterSpellRow
+            key={spell.id}
+            spell={spell}
+            slotsMax={slotsMax}
+            slotsCur={slotsCur}
+            targets={targets}
+            hasSlot={hasSlot}
+            open={openSpellId === spell.id}
+            onToggle={() => setOpenSpellId(openSpellId === spell.id ? null : spell.id)}
+            onCast={(slotLevel, ids) => onCast(spell.id, slotLevel, ids)}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+function MonsterSpellRow({
+  spell, slotsMax, slotsCur, targets, hasSlot, open, onToggle, onCast,
+}: {
+  spell: Spell;
+  slotsMax: number[];
+  slotsCur: number[];
+  targets: LiveToken[];
+  hasSlot: boolean;
+  open: boolean;
+  onToggle: () => void;
+  onCast: (slotLevel: number, targetTokenIds: string[]) => void;
+}) {
+  const isCantrip = spell.level === 0;
+  const [slotLevel, setSlotLevel] = useState(Math.max(spell.level, 1));
+  const [targetIds, setTargetIds] = useState<string[]>([]);
+  const needsTargets = spell.effectType === 'attack' || spell.effectType === 'save' || spell.heals === true;
+  const multi = spell.targeting === 'area';
+
+  const availableSlots: number[] = [];
+  if (!isCantrip) {
+    for (let lvl = spell.level; lvl <= Math.max(spell.level, slotsMax.length); lvl++) {
+      if ((slotsCur[lvl - 1] ?? 0) > 0) availableSlots.push(lvl);
+    }
+  }
+  const canCast = hasSlot && (!needsTargets || targetIds.length > 0);
+
+  return (
+    <div className="dm-monster-spell">
+      <button className="dm-spell-head" onClick={onToggle} disabled={!isCantrip && !hasSlot}>
+        <span>{spell.nameRu}</span>
+        <span className="dm-dim">{isCantrip ? 'Заговор' : `${spell.level} ур.`}</span>
+      </button>
+      {open && (
+        <div className="dm-spell-body anim-fade-in">
+          {!isCantrip && (
+            <div className="dm-hp-btns">
+              {Array.from({ length: Math.max(0, slotsMax.length - spell.level + 1) }, (_, i) => spell.level + i).map((lvl) => (
+                <button
+                  key={lvl}
+                  className={`dm-btn${slotLevel === lvl ? ' dm-btn-active' : ''}`}
+                  disabled={(slotsCur[lvl - 1] ?? 0) <= 0}
+                  onClick={() => setSlotLevel(lvl)}
+                >
+                  {lvl} ур. ({slotsCur[lvl - 1] ?? 0})
+                </button>
+              ))}
+            </div>
+          )}
+          {needsTargets ? (
+            <div className="dm-target-picks">
+              {targets.map((t) => (
+                <label key={t.id} className={`dm-target-pick${targetIds.includes(t.id) ? ' on' : ''}`}>
+                  <input
+                    type={multi ? 'checkbox' : 'radio'}
+                    checked={targetIds.includes(t.id)}
+                    onChange={() =>
+                      setTargetIds((cur) =>
+                        multi
+                          ? cur.includes(t.id) ? cur.filter((x) => x !== t.id) : [...cur, t.id]
+                          : [t.id],
+                      )
+                    }
+                  />
+                  {t.name || 'Безымянный'}
+                  <span className="dm-dim"> {t.currentHp}/{t.maxHp}</span>
+                </label>
+              ))}
+            </div>
+          ) : null}
+          <button
+            className="primary dm-wide"
+            disabled={!canCast}
+            onClick={() => {
+              onCast(isCantrip ? 0 : slotLevel, needsTargets ? targetIds : []);
+              setTargetIds([]);
+              onToggle();
+            }}
+          >
+            <Zap size={13} /> Сотворить{isCantrip ? '' : ` (${slotLevel} ур.)`}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Строка очереди спасбросков ─────────────────────────────────────────────
+
+function SaveQueueRow({
+  request, onResolve,
+}: {
+  request: SaveRequest;
+  onResolve: (req: SaveRequest, rolledValue?: number) => void;
+}) {
+  const [value, setValue] = useState('');
+  const parsed = parseInt(value, 10);
+  return (
+    <div className="dm-save-row">
+      <div className="dm-save-info">
+        <strong>{request.rollerName}</strong>{' '}
+        <span className="dm-dim">
+          ({SAVE_ABILITY_GEN[request.ability]} {fmtMod(request.bonus)}), Сл {request.dc}
+          {request.halfOnSuccess ? ' · половина при успехе' : ''}
+        </span>
+        {request.spellName && (
+          <div className="dm-dim">
+            от «{request.spellName}» ({request.sourceName}) · урон {request.pendingDamage.total}
+          </div>
+        )}
+      </div>
+      <div className="dm-save-actions">
+        <button className="primary" onClick={() => onResolve(request)}>
+          <Dices size={13} /> Кинуть
+        </button>
+        <input
+          type="number"
+          min={1}
+          max={20}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && Number.isFinite(parsed)) onResolve(request, parsed);
+          }}
+          placeholder="д20"
+          style={{ width: 60 }}
+        />
+        <button
+          className="dm-btn"
+          disabled={!Number.isFinite(parsed)}
+          onClick={() => onResolve(request, parsed)}
+        >
+          Вписать
+        </button>
+      </div>
+      {!request.rollerIsDm && (
+        <div className="dm-dim dm-save-fallback">
+          спасбросок персонажа — ждём игрока; можете вписать за него
+        </div>
+      )}
     </div>
   );
 }

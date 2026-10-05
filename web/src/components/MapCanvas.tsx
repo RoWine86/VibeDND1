@@ -64,6 +64,9 @@ export interface MapCanvasProps {
   onDraw?: (shape: DrawShape) => void;
   onErase?: (strokeId: string) => void;
   onClearDrawings?: () => void;
+  /** Клик по карте без перетаскивания (координаты в клетках сетки).
+   *  Используется мастером для размещения нового токена. */
+  onMapClick?: (x: number, y: number) => void;
   /** Тулбар инструментов (только режим dm). По умолчанию виден. */
   showToolbar?: boolean;
   /** Начальная активная вкладка тулбара. По умолчанию 'draw'. */
@@ -580,6 +583,16 @@ export default function MapCanvas(props: MapCanvasProps) {
     canvasRef.current?.releasePointerCapture(e.pointerId);
     if (!m) return;
     const cell = m.grid.cellSize;
+
+    // клик без перетаскивания — координаты в клетках (для размещения токена)
+    if (it.kind === 'pan' && !it.moved && p.onMapClick) {
+      const gx = Math.floor((it.startMap.x - m.grid.originX) / cell);
+      const gy = Math.floor((it.startMap.y - m.grid.originY) / cell);
+      if (gx >= 0 && gy >= 0 && gx < m.grid.cols && gy < m.grid.rows) {
+        p.onMapClick(gx, gy);
+      }
+      return;
+    }
 
     if (it.kind === 'fog-rect' && it.moved) {
       const x = Math.min(it.startMap.x, it.lastMap.x);

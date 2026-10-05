@@ -368,7 +368,7 @@ export default function BoardPage() {
 }
 
 function BoardContent({ sessionId }: { sessionId: string }) {
-  const { session, characters, error } = useSessionStore();
+  const { session, characters, combatEvents, error } = useSessionStore();
   const [adventure, setAdventure] = useState<Adventure | null>(null);
   const [joinUrl, setJoinUrl] = useState('');
   // Доска реагирует только на «Сессия не найдена» — прочие ошибки сервера
@@ -421,6 +421,9 @@ function BoardContent({ sessionId }: { sessionId: string }) {
 
   const combat = session?.combat;
   const lastRolls = (session?.diceLog ?? []).filter((e) => !e.hidden).slice(-5);
+  // структурированный боевой лог: в бою — события движка, вне боя — прежняя
+  // лента свободных бросков
+  const lastEvents = combatEvents.slice(-8).reverse();
   const showLobby = !combat?.active;
 
   return (
@@ -455,19 +458,29 @@ function BoardContent({ sessionId }: { sessionId: string }) {
         />
       </div>
 
-      {/* Лента последних бросков */}
-      {lastRolls.length > 0 && (
-        <div className="board-dice">
-          {lastRolls.map((e) => (
-            <div key={e.id} className="board-dice-entry anim-dice-pop">
-              <Dices size={18} />
-              <span className="bde-name">{e.rollerName}</span>
-              <span className="bde-label">{e.label}</span>
-              <span className="bde-formula">{e.formula}</span>
-              <span className="bde-total">{e.total}</span>
+      {/* Нижняя лента: в бою — структурированные события, иначе последние броски */}
+      {combat?.active && lastEvents.length > 0 ? (
+        <div className="board-dice board-combat-log">
+          {lastEvents.map((e) => (
+            <div key={e.id} className={`board-event anim-dice-pop phase-${e.phase}`}>
+              <span className="board-event-text">{e.text}</span>
             </div>
           ))}
         </div>
+      ) : (
+        lastRolls.length > 0 && (
+          <div className="board-dice">
+            {lastRolls.map((e) => (
+              <div key={e.id} className="board-dice-entry anim-dice-pop">
+                <Dices size={18} />
+                <span className="bde-name">{e.rollerName}</span>
+                <span className="bde-label">{e.label}</span>
+                <span className="bde-formula">{e.formula}</span>
+                <span className="bde-total">{e.total}</span>
+              </div>
+            ))}
+          </div>
+        )
       )}
 
       {/* Лобби: QR и состав партии (когда боя нет) */}
