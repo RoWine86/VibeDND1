@@ -5,7 +5,7 @@
   "nameEn": "Longsword",
   "category": "weapon",
   "weight": 3,
-  "cost": "15 зм",
+  "cost": { "amount": 15, "currency": "gp" },
   "description": "Классический рыцарский клинок. Универсальное свойство позволяет держать его двумя руками для большего урона.",
   "damageDice": "1d8",
   "damageType": "рубящий",
@@ -20,7 +20,7 @@
   "nameEn": "Shortsword",
   "category": "weapon",
   "weight": 2,
-  "cost": "10 зм",
+  "cost": { "amount": 10, "currency": "gp" },
   "description": "Лёгкий клинок, любимый плутами. Подходит для боя двумя оружиями.",
   "damageDice": "1d6",
   "damageType": "колющий",
@@ -36,7 +36,7 @@
   "nameEn": "Greataxe",
   "category": "weapon",
   "weight": 7,
-  "cost": "30 зм",
+  "cost": { "amount": 30, "currency": "gp" },
   "description": "Тяжёлая двуручная секира, наносящая разрушительные удары.",
   "damageDice": "1d12",
   "damageType": "рубящий",
@@ -52,7 +52,7 @@
   "nameEn": "Dagger",
   "category": "weapon",
   "weight": 1,
-  "cost": "2 зм",
+  "cost": { "amount": 2, "currency": "gp" },
   "description": "Небольшой клинок, который можно метнуть или спрятать в рукаве.",
   "damageDice": "1d4",
   "damageType": "колющий",
@@ -69,7 +69,7 @@
   "nameEn": "Rapier",
   "category": "weapon",
   "weight": 2,
-  "cost": "25 зм",
+  "cost": { "amount": 25, "currency": "gp" },
   "description": "Изящный колющий клинок для дуэлянтов, полагающихся на ловкость.",
   "damageDice": "1d8",
   "damageType": "колющий",
@@ -84,7 +84,7 @@
   "nameEn": "Longbow",
   "category": "weapon",
   "weight": 2,
-  "cost": "50 зм",
+  "cost": { "amount": 50, "currency": "gp" },
   "description": "Мощный лук, бьющий на дальние дистанции. Требует обе руки.",
   "damageDice": "1d8",
   "damageType": "колющий",
@@ -102,7 +102,7 @@
   "nameEn": "Shortbow",
   "category": "weapon",
   "weight": 2,
-  "cost": "25 зм",
+  "cost": { "amount": 25, "currency": "gp" },
   "description": "Компактный лук охотников и следопытов.",
   "damageDice": "1d6",
   "damageType": "колющий",
@@ -119,7 +119,7 @@
   "nameEn": "Light Crossbow",
   "category": "weapon",
   "weight": 5,
-  "cost": "25 зм",
+  "cost": { "amount": 25, "currency": "gp" },
   "description": "Простой в обращении арбалет, пробивающий лёгкие доспехи.",
   "damageDice": "1d8",
   "damageType": "колющий",
@@ -137,7 +137,7 @@
   "nameEn": "Quarterstaff",
   "category": "weapon",
   "weight": 4,
-  "cost": "2 см",
+  "cost": { "amount": 2, "currency": "sp" },
   "description": "Простое деревянное оружие странников и магов. В двух руках бьёт сильнее.",
   "damageDice": "1d6",
   "damageType": "дробящий",
@@ -152,7 +152,7 @@
   "nameEn": "Javelin",
   "category": "weapon",
   "weight": 2,
-  "cost": "5 см",
+  "cost": { "amount": 5, "currency": "sp" },
   "description": "Лёгкое копьё, одинаково удобное в рукопашном бою и при метании.",
   "damageDice": "1d6",
   "damageType": "колющий",
@@ -167,7 +167,7 @@
   "nameEn": "Leather Armor",
   "category": "armor",
   "weight": 10,
-  "cost": "10 зм",
+  "cost": { "amount": 10, "currency": "gp" },
   "description": "Лёгкий доспех из проклёпанной кожи. Не мешает двигаться скрытно.",
   "armorClassBase": 11,
   "addDexToAC": true
@@ -178,7 +178,7 @@
   "nameEn": "Studded Leather Armor",
   "category": "armor",
   "weight": 13,
-  "cost": "45 зм",
+  "cost": { "amount": 45, "currency": "gp" },
   "description": "Улучшенный кожаный доспех с металлическими заклёпками. Лучший выбор для ловкачей.",
   "armorClassBase": 12,
   "addDexToAC": true
@@ -189,7 +189,7 @@
   "nameEn": "Chain Shirt",
   "category": "armor",
   "weight": 20,
-  "cost": "50 зм",
+  "cost": { "amount": 50, "currency": "gp" },
   "description": "Средний доспех из сплетённых колец, который носят под одеждой.",
   "armorClassBase": 13,
   "addDexToAC": true,
@@ -201,7 +201,7 @@
   "nameEn": "Scale Mail",
   "category": "armor",
   "weight": 45,
-  "cost": "50 зм",
+  "cost": { "amount": 50, "currency": "gp" },
   "description": "Средний доспех из наложенных друг на друга металлических чешуек. Помеха на проверки Скрытности.",
   "armorClassBase": 14,
   "addDexToAC": true,
@@ -213,7 +213,7 @@
   "nameEn": "Chain Mail",
   "category": "armor",
   "weight": 55,
-  "cost": "75 зм",
+  "cost": { "amount": 75, "currency": "gp" },
   "description": "Тяжёлый доспех из металлических колец. Требует Силы 13, помеха на проверки Скрытности.",
   "armorClassBase": 16,
   "addDexToAC": false
@@ -224,7 +224,7 @@
   "nameEn": "Plate",
   "category": "armor",
   "weight": 65,
-  "cost": "1500 зм",
+  "cost": { "amount": 1500, "currency": "gp" },
   "description": "Полный комплект фасонных стальных лат — лучшая броня без магии. Требует Силы 15, помеха на проверки Скрытности.",
   "armorClassBase": 18,
   "addDexToAC": false
@@ -235,7 +235,7 @@
   "nameEn": "Shield",
   "category": "armor",
   "weight": 6,
-  "cost": "10 зм",
+  "cost": { "amount": 10, "currency": "gp" },
   "description": "Деревянный или стальной щит. Даёт +2 к КД, занимает одну руку.",
   "armorClassBase": 2,
   "addDexToAC": false
@@ -246,7 +246,7 @@
   "nameEn": "Potion of Healing",
   "category": "consumable",
   "weight": 0.5,
-  "cost": "50 зм",
+  "cost": { "amount": 50, "currency": "gp" },
   "description": "Алое зелье, восстанавливающее 2d4+2 хитов при употреблении (действие).",
   "requiresAttunement": false
  },
@@ -256,7 +256,7 @@
   "nameEn": "Thieves' Tools",
   "category": "tool",
   "weight": 1,
-  "cost": "25 зм",
+  "cost": { "amount": 25, "currency": "gp" },
   "description": "Набор отмычек и тонких инструментов для вскрытия замков и обезвреживания ловушек."
  },
  {
@@ -265,7 +265,7 @@
   "nameEn": "Adventurer's Pack",
   "category": "gear",
   "weight": 59,
-  "cost": "7 зм",
+  "cost": { "amount": 7, "currency": "gp" },
   "description": "Рюкзак, трутница, 10 факелов, 10 дней рациона, бурдюк, 50 футов пеньковой верёвки — всё необходимое искателю приключений."
  },
  {
@@ -274,7 +274,7 @@
   "nameEn": "Club",
   "category": "weapon",
   "weight": 2,
-  "cost": "1 см",
+  "cost": { "amount": 1, "currency": "sp" },
   "description": "Простейшее оружие — тяжёлый обрезок дерева.",
   "damageDice": "1d4",
   "damageType": "дробящий",
@@ -289,7 +289,7 @@
   "nameEn": "Greatclub",
   "category": "weapon",
   "weight": 10,
-  "cost": "2 см",
+  "cost": { "amount": 2, "currency": "sp" },
   "description": "Тяжёлая двуручная дубина, любимое оружие огров.",
   "damageDice": "1d8",
   "damageType": "дробящий",
@@ -304,7 +304,7 @@
   "nameEn": "Handaxe",
   "category": "weapon",
   "weight": 2,
-  "cost": "5 зм",
+  "cost": { "amount": 5, "currency": "gp" },
   "description": "Небольшой топорик дворфов и лесорубов. Можно метать.",
   "damageDice": "1d6",
   "damageType": "рубящий",
@@ -320,7 +320,7 @@
   "nameEn": "Light Hammer",
   "category": "weapon",
   "weight": 2,
-  "cost": "2 зм",
+  "cost": { "amount": 2, "currency": "gp" },
   "description": "Небольшой метательный молот.",
   "damageDice": "1d4",
   "damageType": "дробящий",
@@ -336,7 +336,7 @@
   "nameEn": "Mace",
   "category": "weapon",
   "weight": 4,
-  "cost": "5 зм",
+  "cost": { "amount": 5, "currency": "gp" },
   "description": "Металлический набалдашник на рукояти. Классическое оружие жрецов.",
   "damageDice": "1d6",
   "damageType": "дробящий",
@@ -349,7 +349,7 @@
   "nameEn": "Sickle",
   "category": "weapon",
   "weight": 2,
-  "cost": "1 зм",
+  "cost": { "amount": 1, "currency": "gp" },
   "description": "Земледельческий инструмент, обращённый в оружие. Любим друидами.",
   "damageDice": "1d4",
   "damageType": "рубящий",
@@ -364,7 +364,7 @@
   "nameEn": "Spear",
   "category": "weapon",
   "weight": 3,
-  "cost": "1 зм",
+  "cost": { "amount": 1, "currency": "gp" },
   "description": "Простое и надёжное оружие пехоты. Годится и для метания.",
   "damageDice": "1d6",
   "damageType": "колющий",
@@ -380,7 +380,7 @@
   "nameEn": "Dart",
   "category": "weapon",
   "weight": 0.25,
-  "cost": "5 мм",
+  "cost": { "amount": 5, "currency": "cp" },
   "description": "Небольшой метательный дротик с оперением.",
   "damageDice": "1d4",
   "damageType": "колющий",
@@ -396,7 +396,7 @@
   "nameEn": "Sling",
   "category": "weapon",
   "weight": 0,
-  "cost": "1 см",
+  "cost": { "amount": 1, "currency": "sp" },
   "description": "Кожаная праща, метающая камни и свинцовые пули.",
   "damageDice": "1d4",
   "damageType": "дробящий",
@@ -412,7 +412,7 @@
   "nameEn": "Battleaxe",
   "category": "weapon",
   "weight": 4,
-  "cost": "10 зм",
+  "cost": { "amount": 10, "currency": "gp" },
   "description": "Классический топор воина-дворфа. В двух руках бьёт сильнее.",
   "damageDice": "1d8",
   "damageType": "рубящий",
@@ -427,7 +427,7 @@
   "nameEn": "Flail",
   "category": "weapon",
   "weight": 2,
-  "cost": "10 зм",
+  "cost": { "amount": 10, "currency": "gp" },
   "description": "Боевой цеп с шипастым ударным звеном.",
   "damageDice": "1d8",
   "damageType": "дробящий",
@@ -440,7 +440,7 @@
   "nameEn": "Glaive",
   "category": "weapon",
   "weight": 6,
-  "cost": "20 зм",
+  "cost": { "amount": 20, "currency": "gp" },
   "description": "Клинок на длинном древке. Держит врага на расстоянии.",
   "damageDice": "1d10",
   "damageType": "рубящий",
@@ -457,7 +457,7 @@
   "nameEn": "Greatsword",
   "category": "weapon",
   "weight": 6,
-  "cost": "50 зм",
+  "cost": { "amount": 50, "currency": "gp" },
   "description": "Огромный двуручный клинок, рассекающий доспехи.",
   "damageDice": "2d6",
   "damageType": "рубящий",
@@ -473,7 +473,7 @@
   "nameEn": "Halberd",
   "category": "weapon",
   "weight": 6,
-  "cost": "20 зм",
+  "cost": { "amount": 20, "currency": "gp" },
   "description": "Топор и копьё на одном древке. Оружие стражи и сержантов.",
   "damageDice": "1d10",
   "damageType": "рубящий",
@@ -490,7 +490,7 @@
   "nameEn": "Lance",
   "category": "weapon",
   "weight": 6,
-  "cost": "10 зм",
+  "cost": { "amount": 10, "currency": "gp" },
   "description": "Длинная пика конного воина. С помехой против целей в пределах 5 фт.; вне седла требует двух рук.",
   "damageDice": "1d12",
   "damageType": "колющий",
@@ -506,7 +506,7 @@
   "nameEn": "Maul",
   "category": "weapon",
   "weight": 10,
-  "cost": "10 зм",
+  "cost": { "amount": 10, "currency": "gp" },
   "description": "Огромный двуручный молот, дробящий кости и камень.",
   "damageDice": "2d6",
   "damageType": "дробящий",
@@ -522,7 +522,7 @@
   "nameEn": "Morningstar",
   "category": "weapon",
   "weight": 4,
-  "cost": "15 зм",
+  "cost": { "amount": 15, "currency": "gp" },
   "description": "Булава с шипастым шаром. Любимое оружие багберов.",
   "damageDice": "1d8",
   "damageType": "колющий",
@@ -535,7 +535,7 @@
   "nameEn": "Pike",
   "category": "weapon",
   "weight": 18,
-  "cost": "5 зм",
+  "cost": { "amount": 5, "currency": "gp" },
   "description": "Длиннейшее древковое оружие пехотных построений.",
   "damageDice": "1d10",
   "damageType": "колющий",
@@ -552,7 +552,7 @@
   "nameEn": "Scimitar",
   "category": "weapon",
   "weight": 3,
-  "cost": "25 зм",
+  "cost": { "amount": 25, "currency": "gp" },
   "description": "Изогнутый клинок степей и пустынь. Подходит для боя двумя оружиями.",
   "damageDice": "1d6",
   "damageType": "рубящий",
@@ -568,7 +568,7 @@
   "nameEn": "Trident",
   "category": "weapon",
   "weight": 4,
-  "cost": "5 зм",
+  "cost": { "amount": 5, "currency": "gp" },
   "description": "Трёхзубое копьё морских народов. Можно метать.",
   "damageDice": "1d6",
   "damageType": "колющий",
@@ -584,7 +584,7 @@
   "nameEn": "War Pick",
   "category": "weapon",
   "weight": 2,
-  "cost": "5 зм",
+  "cost": { "amount": 5, "currency": "gp" },
   "description": "Заострённый киркообразный клинок, пробивающий доспехи.",
   "damageDice": "1d8",
   "damageType": "колющий",
@@ -597,7 +597,7 @@
   "nameEn": "Warhammer",
   "category": "weapon",
   "weight": 2,
-  "cost": "15 зм",
+  "cost": { "amount": 15, "currency": "gp" },
   "description": "Одноручный боевой молот дворфов. В двух руках бьёт сильнее.",
   "damageDice": "1d8",
   "damageType": "дробящий",
@@ -612,7 +612,7 @@
   "nameEn": "Whip",
   "category": "weapon",
   "weight": 3,
-  "cost": "2 зм",
+  "cost": { "amount": 2, "currency": "gp" },
   "description": "Длинный кожаный кнут, бьющий на дистанции 10 футов.",
   "damageDice": "1d4",
   "damageType": "рубящий",
@@ -628,7 +628,7 @@
   "nameEn": "Hand Crossbow",
   "category": "weapon",
   "weight": 3,
-  "cost": "75 зм",
+  "cost": { "amount": 75, "currency": "gp" },
   "description": "Одноручный арбалет — оружие дроу и убийц.",
   "damageDice": "1d6",
   "damageType": "колющий",
@@ -646,7 +646,7 @@
   "nameEn": "Heavy Crossbow",
   "category": "weapon",
   "weight": 18,
-  "cost": "50 зм",
+  "cost": { "amount": 50, "currency": "gp" },
   "description": "Мощный осадный арбалет, пробивающий тяжёлые доспехи.",
   "damageDice": "1d10",
   "damageType": "колющий",
@@ -665,7 +665,7 @@
   "nameEn": "Blowgun",
   "category": "weapon",
   "weight": 1,
-  "cost": "10 зм",
+  "cost": { "amount": 10, "currency": "gp" },
   "description": "Бесшумная трубка, стреляющая иглами. Часто используется с ядом.",
   "damageDice": "1",
   "damageType": "колющий",
@@ -682,7 +682,7 @@
   "nameEn": "Net",
   "category": "weapon",
   "weight": 3,
-  "cost": "1 зм",
+  "cost": { "amount": 1, "currency": "gp" },
   "description": "Боевая сеть: при попадании опутывает цель не больше Большого размера (СЛ 10 Силы, чтобы вырваться). Без урона.",
   "weaponAbility": "str",
   "properties": [
@@ -696,7 +696,7 @@
   "nameEn": "Padded Armor",
   "category": "armor",
   "weight": 8,
-  "cost": "5 зм",
+  "cost": { "amount": 5, "currency": "gp" },
   "description": "Самый дешёвый доспех из стёганой ткани. Помеха на проверки Скрытности.",
   "armorClassBase": 11,
   "addDexToAC": true
@@ -707,7 +707,7 @@
   "nameEn": "Hide Armor",
   "category": "armor",
   "weight": 12,
-  "cost": "10 зм",
+  "cost": { "amount": 10, "currency": "gp" },
   "description": "Грубый средний доспех из толстых звериных шкур и меха.",
   "armorClassBase": 12,
   "addDexToAC": true,
@@ -719,7 +719,7 @@
   "nameEn": "Breastplate",
   "category": "armor",
   "weight": 20,
-  "cost": "400 зм",
+  "cost": { "amount": 400, "currency": "gp" },
   "description": "Фасонный металлический панцирь поверх мягкой поддоспешной одежды. Не мешает скрытности.",
   "armorClassBase": 14,
   "addDexToAC": true,
@@ -731,7 +731,7 @@
   "nameEn": "Half Plate",
   "category": "armor",
   "weight": 40,
-  "cost": "750 зм",
+  "cost": { "amount": 750, "currency": "gp" },
   "description": "Неполный латный доспех: пластины поверх кольчуги. Помеха на проверки Скрытности.",
   "armorClassBase": 15,
   "addDexToAC": true,
@@ -743,7 +743,7 @@
   "nameEn": "Ring Mail",
   "category": "armor",
   "weight": 40,
-  "cost": "30 зм",
+  "cost": { "amount": 30, "currency": "gp" },
   "description": "Кожаный доспех с пришитыми тяжёлыми кольцами. Помеха на проверки Скрытности.",
   "armorClassBase": 14,
   "addDexToAC": false
@@ -754,7 +754,7 @@
   "nameEn": "Splint",
   "category": "armor",
   "weight": 60,
-  "cost": "200 зм",
+  "cost": { "amount": 200, "currency": "gp" },
   "description": "Узкие вертикальные пластины, заклёпанные на кожаной основе. Требует Силы 15, помеха на проверки Скрытности.",
   "armorClassBase": 17,
   "addDexToAC": false
@@ -765,7 +765,7 @@
   "nameEn": "Backpack",
   "category": "gear",
   "weight": 5,
-  "cost": "2 зм",
+  "cost": { "amount": 2, "currency": "gp" },
   "description": "Вместительный кожаный рюкзак с множеством карманов. Вмещает до 30 фунтов снаряжения."
  },
  {
@@ -774,7 +774,7 @@
   "nameEn": "Hempen Rope (50 feet)",
   "category": "gear",
   "weight": 10,
-  "cost": "1 зм",
+  "cost": { "amount": 1, "currency": "gp" },
   "description": "Прочная верёвка. Имеет 2 хита, разрезается уроном, выдерживает рывок СЛ 17 Силы."
  },
  {
@@ -783,7 +783,7 @@
   "nameEn": "Silk Rope (50 feet)",
   "category": "gear",
   "weight": 5,
-  "cost": "10 зм",
+  "cost": { "amount": 10, "currency": "gp" },
   "description": "Лёгкая и ещё более прочная шёлковая верёвка."
  },
  {
@@ -792,7 +792,7 @@
   "nameEn": "Torch",
   "category": "gear",
   "weight": 1,
-  "cost": "1 мм",
+  "cost": { "amount": 1, "currency": "cp" },
   "description": "Горит 1 час, давая яркий свет в радиусе 20 фт. и тусклый ещё на 20 фт. Как оружие — 1 урона огнём."
  },
  {
@@ -801,7 +801,7 @@
   "nameEn": "Tinderbox",
   "category": "gear",
   "weight": 1,
-  "cost": "5 см",
+  "cost": { "amount": 5, "currency": "sp" },
   "description": "Кремневое огниво, трут и кресало. Зажигание факела — действие, костра — 1 минута."
  },
  {
@@ -810,7 +810,7 @@
   "nameEn": "Rations (1 day)",
   "category": "gear",
   "weight": 2,
-  "cost": "5 см",
+  "cost": { "amount": 5, "currency": "sp" },
   "description": "Сухпаёк на день пути: вяленое мясо, сухари, сыр и орехи."
  },
  {
@@ -819,7 +819,7 @@
   "nameEn": "Waterskin",
   "category": "gear",
   "weight": 5,
-  "cost": "2 см",
+  "cost": { "amount": 2, "currency": "sp" },
   "description": "Вмещает 4 пинты воды — дневной запас для одного путника."
  },
  {
@@ -828,7 +828,7 @@
   "nameEn": "Bedroll",
   "category": "gear",
   "weight": 7,
-  "cost": "1 зм",
+  "cost": { "amount": 1, "currency": "gp" },
   "description": "Тёплый свёрнутый тюфяк и одеяло для ночёвки в дикой местности."
  },
  {
@@ -837,7 +837,7 @@
   "nameEn": "Hooded Lantern",
   "category": "gear",
   "weight": 2,
-  "cost": "5 зм",
+  "cost": { "amount": 5, "currency": "gp" },
   "description": "Горит 6 часов на фляге масла: яркий свет 30 фт., тусклый ещё 30 фт. Заслонка приглушает свет до 5 фт. тусклого."
  },
  {
@@ -846,7 +846,7 @@
   "nameEn": "Oil (flask)",
   "category": "gear",
   "weight": 1,
-  "cost": "1 см",
+  "cost": { "amount": 1, "currency": "sp" },
   "description": "Топливо для фонаря. Можно выплеснуть на цель и поджечь: 5 урона огнём за ход в течение 2 ходов."
  },
  {
@@ -855,7 +855,7 @@
   "nameEn": "Crowbar",
   "category": "gear",
   "weight": 5,
-  "cost": "2 зм",
+  "cost": { "amount": 2, "currency": "gp" },
   "description": "Железный лом. Даёт преимущество на проверки Силы там, где можно применить рычаг."
  },
  {
@@ -864,7 +864,7 @@
   "nameEn": "Grappling Hook",
   "category": "gear",
   "weight": 4,
-  "cost": "2 зм",
+  "cost": { "amount": 2, "currency": "gp" },
   "description": "Крюк для забрасывания с верёвкой при штурме стен и скал."
  },
  {
@@ -873,7 +873,7 @@
   "nameEn": "Holy Symbol",
   "category": "gear",
   "weight": 1,
-  "cost": "5 зм",
+  "cost": { "amount": 5, "currency": "gp" },
   "description": "Эмблема божества — фокусировка для заклинаний жреца и паладина."
  },
  {
@@ -882,7 +882,7 @@
   "nameEn": "Spellbook",
   "category": "gear",
   "weight": 3,
-  "cost": "50 зм",
+  "cost": { "amount": 50, "currency": "gp" },
   "description": "Кожаный фолиант на 100 страниц, необходимый волшебнику для записи заклинаний."
  },
  {
@@ -891,7 +891,7 @@
   "nameEn": "Component Pouch",
   "category": "gear",
   "weight": 2,
-  "cost": "25 зм",
+  "cost": { "amount": 25, "currency": "gp" },
   "description": "Поясная сумка со всеми обычными материальными компонентами для заклинаний."
  },
  {
@@ -900,7 +900,7 @@
   "nameEn": "Arcane Focus",
   "category": "gear",
   "weight": 1,
-  "cost": "10 зм",
+  "cost": { "amount": 10, "currency": "gp" },
   "description": "Кристалл, сфера, жезл или посох — фокусировка для заклинаний чародея, волшебника и колдуна."
  },
  {
@@ -909,7 +909,7 @@
   "nameEn": "Healer's Kit",
   "category": "tool",
   "weight": 3,
-  "cost": "5 зм",
+  "cost": { "amount": 5, "currency": "gp" },
   "description": "Бинты, мази и шины, 10 использований. Действием стабилизирует существо при 0 хитах без проверки Медицины."
  },
  {
@@ -918,7 +918,7 @@
   "nameEn": "Herbalism Kit",
   "category": "tool",
   "weight": 3,
-  "cost": "5 зм",
+  "cost": { "amount": 5, "currency": "gp" },
   "description": "Секаторы, ступка и пузырьки. Позволяет опознавать растения и изготавливать зелья лечения и противоядия."
  },
  {
@@ -927,7 +927,7 @@
   "nameEn": "Poisoner's Kit",
   "category": "tool",
   "weight": 2,
-  "cost": "50 зм",
+  "cost": { "amount": 50, "currency": "gp" },
   "description": "Склянки, перчатки и реактивы для изготовления и нанесения ядов."
  },
  {
@@ -936,7 +936,7 @@
   "nameEn": "Alchemist's Supplies",
   "category": "tool",
   "weight": 8,
-  "cost": "50 зм",
+  "cost": { "amount": 50, "currency": "gp" },
   "description": "Перегонные кубы, реторты и реактивы для алхимических опытов."
  },
  {
@@ -945,7 +945,7 @@
   "nameEn": "Smith's Tools",
   "category": "tool",
   "weight": 8,
-  "cost": "20 зм",
+  "cost": { "amount": 20, "currency": "gp" },
   "description": "Молоты, щипцы, уголь и наковальня для работы с металлом."
  },
  {
@@ -954,7 +954,7 @@
   "nameEn": "Climber's Kit",
   "category": "gear",
   "weight": 12,
-  "cost": "25 зм",
+  "cost": { "amount": 25, "currency": "gp" },
   "description": "Крюки, клинья, обвязка и ботинки. Не даёт упасть ниже чем на 25 футов при страховке."
  },
  {
@@ -963,7 +963,7 @@
   "nameEn": "Fishing Tackle",
   "category": "gear",
   "weight": 4,
-  "cost": "1 зм",
+  "cost": { "amount": 1, "currency": "gp" },
   "description": "Удочка, леска, крючки и наживка для добычи пропитания у воды."
  },
  {
@@ -972,7 +972,7 @@
   "nameEn": "Hunting Trap",
   "category": "gear",
   "weight": 25,
-  "cost": "5 зм",
+  "cost": { "amount": 5, "currency": "gp" },
   "description": "Стальной зубчатый капкан: урон 1d4 колющий и остановка цели (СЛ 13 Силы, чтобы освободиться)."
  },
  {
@@ -981,7 +981,7 @@
   "nameEn": "Antitoxin",
   "category": "consumable",
   "weight": 0,
-  "cost": "50 зм",
+  "cost": { "amount": 50, "currency": "gp" },
   "description": "Выпившее его существо совершает с преимуществом спасброски от яда в течение 1 часа."
  },
  {
@@ -990,7 +990,7 @@
   "nameEn": "Potion of Greater Healing",
   "category": "consumable",
   "weight": 0.5,
-  "cost": "150 зм",
+  "cost": { "amount": 150, "currency": "gp" },
   "description": "Восстанавливает 4d4+4 хитов при употреблении (действие)."
  },
  {
@@ -999,7 +999,7 @@
   "nameEn": "Potion of Superior Healing",
   "category": "consumable",
   "weight": 0.5,
-  "cost": "500 зм",
+  "cost": { "amount": 500, "currency": "gp" },
   "description": "Восстанавливает 8d4+8 хитов при употреблении (действие)."
  },
  {
@@ -1010,7 +1010,6 @@
   "magic": true,
   "rarity": "uncommon",
   "weight": 3,
-  "cost": "—",
   "damageDice": "1d8",
   "damageType": "рубящий",
   "weaponAbility": "str",
@@ -1024,7 +1023,6 @@
   "magic": true,
   "rarity": "rare",
   "weight": 1,
-  "cost": "—",
   "damageDice": "1d4",
   "damageType": "колющий",
   "weaponAbility": "str",
@@ -1043,7 +1041,6 @@
   "magic": true,
   "rarity": "uncommon",
   "weight": 2,
-  "cost": "—",
   "damageDice": "1d6",
   "damageType": "колющий",
   "weaponAbility": "str",
@@ -1061,7 +1058,6 @@
   "rarity": "rare",
   "requiresAttunement": true,
   "weight": 3,
-  "cost": "—",
   "damageDice": "1d8",
   "damageType": "рубящий",
   "weaponAbility": "str",
@@ -1076,7 +1072,6 @@
   "rarity": "legendary",
   "requiresAttunement": true,
   "weight": 3,
-  "cost": "—",
   "damageDice": "1d8",
   "damageType": "рубящий",
   "weaponAbility": "str",
@@ -1255,7 +1250,7 @@
   "magic": true,
   "rarity": "uncommon",
   "weight": 0.5,
-  "cost": "150 зм",
+  "cost": { "amount": 150, "currency": "gp" },
   "description": "Восстанавливает 4d4+4 хитов при употреблении (действие)."
  },
  {

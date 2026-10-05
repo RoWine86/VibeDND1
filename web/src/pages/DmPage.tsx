@@ -5,6 +5,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import {
+  Coins,
   Crosshair,
   Dices,
   Eye,
@@ -27,7 +28,9 @@ import {
 import type {
   Ability,
   Adventure,
+  Character,
   ConditionKey,
+  Currency,
   DiceLogEntry,
   DrawShape,
   FogShape,
@@ -43,6 +46,7 @@ import { SessionProvider, useSessionStore } from '../sessionStore';
 import { api } from '../api';
 import MapCanvas from '../components/MapCanvas';
 import type { FogReveal } from '../components/MapCanvas';
+import CoinPurse, { COIN_META } from '../components/CoinPurse';
 import '../styles/map.css';
 
 const d20 = () => Math.ceil(Math.random() * 20);
@@ -633,6 +637,15 @@ function DmConsole({ onPickSession }: { onPickSession: (id: string) => void }) {
                     ))}
                   </div>
                 </div>
+                {/* Кошелёк персонажа: мастер может выдать/изъять (раздача лута) */}
+                {selectedToken.characterId && (
+                  <DmCoinPurse
+                    character={characters.find((c) => c.id === selectedToken.characterId)}
+                    onPatch={(patch) =>
+                      emit({ type: 'characterPatch', characterId: selectedToken.characterId!, patch })
+                    }
+                  />
+                )}
                 <div className="dm-hp-btns">
                   <button
                     className="dm-btn"
@@ -1134,6 +1147,56 @@ function SaveQueueRow({
           спасбросок персонажа — ждём игрока; можете вписать за него
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Кошелёк персонажа у мастера: выдать / изъять ───────────────────────────
+
+const COIN_CURS: Currency[] = ['cp', 'sp', 'gp', 'pp'];
+
+function DmCoinPurse({
+  character, onPatch,
+}: {
+  character: Character | undefined;
+  onPatch: (patch: Partial<Character>) => void;
+}) {
+  const [amount, setAmount] = useState('10');
+  const [cur, setCur] = useState<Currency>('gp');
+  if (!character) return null;
+  const coins = character.coins ?? { cp: 0, sp: 0, gp: 0, pp: 0 };
+  const n = Math.max(0, Math.round(Number(amount) || 0));
+
+  const apply = (sign: 1 | -1) => {
+    if (n === 0) return;
+    const next = { ...coins, [cur]: Math.max(0, coins[cur] + sign * n) };
+    onPatch({ coins: next });
+  };
+
+  return (
+    <div className="dm-field">
+      <label><Coins size={13} /> Кошелёк</label>
+      <CoinPurse coins={coins} />
+      <div className="dm-save-actions" style={{ marginTop: 6 }}>
+        <input
+          type="number"
+          min={0}
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          style={{ width: 70 }}
+        />
+        <select value={cur} onChange={(e) => setCur(e.target.value as Currency)}>
+          {COIN_CURS.map((c) => (
+            <option key={c} value={c}>{COIN_META[c].short}</option>
+          ))}
+        </select>
+        <button className="dm-btn" onClick={() => apply(1)}>
+          <Plus size={13} /> Выдать
+        </button>
+        <button className="dm-btn dm-danger" onClick={() => apply(-1)}>
+          <Minus size={13} /> Изъять
+        </button>
+      </div>
     </div>
   );
 }

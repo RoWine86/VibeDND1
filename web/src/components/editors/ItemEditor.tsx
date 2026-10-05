@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Save, X } from 'lucide-react';
-import type { Ability, Item } from '@vibednd/shared';
+import type { Ability, Currency, Item } from '@vibednd/shared';
 import { ABILITIES, ABILITY_NAMES_RU } from '@vibednd/shared';
 import { api } from '../../api';
 
@@ -125,11 +125,33 @@ export default function ItemEditor({ initial, onSaved, onCancel }: Props) {
         </div>
         <div className="form-field">
           <label>Стоимость</label>
-          <input
-            value={item.cost ?? ''}
-            onChange={(e) => set('cost', e.target.value || undefined)}
-            placeholder="10 зм"
-          />
+          <div style={{ display: 'flex', gap: 6 }}>
+            <input
+              type="number"
+              min={0}
+              style={{ flex: 1 }}
+              value={item.cost?.amount ?? ''}
+              onChange={(e) => {
+                const amount = e.target.value === '' ? undefined : Math.max(0, Math.round(Number(e.target.value)));
+                const currency = item.cost?.currency ?? 'gp';
+                set('cost', amount == null ? undefined : { amount, currency });
+              }}
+              placeholder="10"
+            />
+            <select
+              style={{ width: 84 }}
+              value={item.cost?.currency ?? 'gp'}
+              onChange={(e) => {
+                const currency = e.target.value as Currency;
+                set('cost', { amount: item.cost?.amount ?? 0, currency });
+              }}
+            >
+              <option value="cp">мм</option>
+              <option value="sp">см</option>
+              <option value="gp">зм</option>
+              <option value="pp">пм</option>
+            </select>
+          </div>
         </div>
         <div className="form-field" style={{ justifyContent: 'flex-end' }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 14 }}>

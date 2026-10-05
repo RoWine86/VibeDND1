@@ -3,6 +3,7 @@
 import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
 import os from 'node:os';
+import { zeroCoins } from '@vibednd/shared';
 import type { Adventure, LiveToken, SessionState } from '@vibednd/shared';
 import * as db from './db.js';
 
@@ -93,7 +94,8 @@ export function restRouter(): Router {
       res.status(400).json({ error: 'Некорректные данные персонажа: нужно поле name' });
       return;
     }
-    const withId = { ...ch, id: ch.id ?? randomUUID() };
+    // кошелёк по умолчанию — нули, если клиент его не прислал (шаг 6)
+    const withId = { coins: zeroCoins(), ...ch, id: ch.id ?? randomUUID() };
     db.saveCharacter(withId as never);
     res.json(withId);
   });

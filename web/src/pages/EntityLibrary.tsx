@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, BookOpen, Eye, Package, PawPrint, Pencil, Plus, Search, Sparkles, Trash2 } from 'lucide-react';
 import type { CharacterClass, Item, Monster, Spell } from '@vibednd/shared';
+import { costText } from '@vibednd/shared';
 import { api } from '../api';
 import MonsterEditor from '../components/editors/MonsterEditor';
 import SpellEditor from '../components/editors/SpellEditor';
@@ -51,7 +52,7 @@ function entitySubtitle(kind: Kind, e: AnyEntity): string {
   }
   const it = e as Item;
   const bits = [ITEM_CATEGORY_RU[it.category]];
-  if (it.cost) bits.push(it.cost);
+  if (it.cost) bits.push(costText(it.cost));
   if (it.damageDice) bits.push(`Урон ${it.damageDice}${it.damageType ? ` (${it.damageType})` : ''}`);
   if (it.armorClassBase != null) bits.push(`КД ${it.armorClassBase}`);
   return bits.join(' · ');

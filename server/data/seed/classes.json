@@ -13,6 +13,7 @@
     ],
     "spellcastingAbility": "cha",
     "subclassLevel": 3,
+    "startingGold": { "dice": "5d4", "multiply": 10 },
     "spellSlotsByLevel": {
       "1": [
         2
@@ -126,6 +127,7 @@
       "con"
     ],
     "subclassLevel": 3,
+    "startingGold": { "dice": "2d4", "multiply": 10 },
     "features": [
       {
         "level": 1,
@@ -178,6 +180,7 @@
       "con"
     ],
     "subclassLevel": 3,
+    "startingGold": { "dice": "5d4", "multiply": 10 },
     "features": [
       {
         "level": 1,
@@ -225,6 +228,7 @@
     ],
     "spellcastingAbility": "int",
     "subclassLevel": 3,
+    "startingGold": { "dice": "4d4", "multiply": 10 },
     "spellSlotsByLevel": {
       "1": [
         2
@@ -339,6 +343,7 @@
     ],
     "spellcastingAbility": "wis",
     "subclassLevel": 3,
+    "startingGold": { "dice": "2d4", "multiply": 10 },
     "spellSlotsByLevel": {
       "1": [
         2
@@ -458,6 +463,7 @@
     ],
     "spellcastingAbility": "wis",
     "subclassLevel": 3,
+    "startingGold": { "dice": "5d4", "multiply": 10 },
     "spellSlotsByLevel": {
       "1": [
         2
@@ -567,6 +573,7 @@
     ],
     "spellcastingAbility": "cha",
     "subclassLevel": 1,
+    "startingGold": { "dice": "4d4", "multiply": 10 },
     "spellSlotsByLevel": {
       "1": [
         1
@@ -684,6 +691,7 @@
       "dex"
     ],
     "subclassLevel": 3,
+    "startingGold": { "dice": "5d4", "multiply": 1 },
     "features": [
       {
         "level": 1,
@@ -737,6 +745,7 @@
     ],
     "spellcastingAbility": "cha",
     "subclassLevel": 3,
+    "startingGold": { "dice": "5d4", "multiply": 10 },
     "spellSlotsByLevel": {
       "1": [
         2
@@ -842,6 +851,7 @@
       "int"
     ],
     "subclassLevel": 3,
+    "startingGold": { "dice": "4d4", "multiply": 10 },
     "features": [
       {
         "level": 1,
@@ -895,6 +905,7 @@
     ],
     "spellcastingAbility": "wis",
     "subclassLevel": 3,
+    "startingGold": { "dice": "5d4", "multiply": 10 },
     "spellSlotsByLevel": {
       "1": [
         2
@@ -996,6 +1007,7 @@
     ],
     "spellcastingAbility": "cha",
     "subclassLevel": 3,
+    "startingGold": { "dice": "3d4", "multiply": 10 },
     "spellSlotsByLevel": {
       "1": [
         2

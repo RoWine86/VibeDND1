@@ -6,7 +6,7 @@ import { ArrowLeft, ArrowRight, Check, Dices, Eye, Minus, Plus } from 'lucide-re
 import {
   ABILITIES, ABILITY_NAMES_RU, POINT_BUY_BUDGET, POINT_BUY_COSTS, STANDARD_ARRAY,
   abilityModifier, effectiveScores, firstLevelHp, modifierText, signedText, pointBuySpent,
-  proficiencyBonus,
+  proficiencyBonus, rollDice, zeroCoins,
 } from '@vibednd/shared';
 import type {
   Ability, AbilityScores, Background, Character, CharacterClass, Item,
@@ -52,6 +52,8 @@ export default function CharacterNew() {
   const [chosenSpells, setChosenSpells] = useState<string[]>([]);
   const [gearChoice, setGearChoice] = useState<'equipment' | 'gold'>('equipment');
   const [viewSpell, setViewSpell] = useState<Spell | null>(null);
+  // стартовое золото: бросок костей класса (шаг 6); null — ещё не кидали
+  const [goldRoll, setGoldRoll] = useState<{ total: number; rolls: number[] } | null>(null);
 
   useEffect(() => {
     Promise.all([
@@ -115,9 +117,11 @@ export default function CharacterNew() {
       deathSaves: { successes: 0, failures: 0 },
       inspiration: false,
       notes: '',
+      // «золото вместо снаряжения»: результат броска костей класса в кошелёк
+      coins: gearChoice === 'gold' && goldRoll ? { ...zeroCoins(), gp: goldRoll.total } : zeroCoins(),
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refs, cls, bg, baseScores, bonusPlus2, bonusPlus1, name, playerName, speciesId, backgroundId, classId, chosenSpells, gearChoice]);
+  }, [refs, cls, bg, baseScores, bonusPlus2, bonusPlus1, name, playerName, speciesId, backgroundId, classId, chosenSpells, gearChoice, goldRoll]);
 
   function buildInventory(): Character['inventory'] {
     if (!refs || gearChoice !== 'equipment') return [];
@@ -153,6 +157,14 @@ export default function CharacterNew() {
     if (bonusPlus2) out[bonusPlus2] = 2;
     if (bonusPlus1) out[bonusPlus1] = (out[bonusPlus1] ?? 0) + 1;
     return out;
+  }
+
+  /** Бросок костей стартового золота класса (таблица PHB 2024). */
+  function rollGold() {
+    const sg = cls?.startingGold;
+    if (!sg) return;
+    const rolled = rollDice(sg.dice);
+    setGoldRoll({ total: rolled.total * sg.multiply, rolls: rolled.rolls });
   }
 
   // ── Валидация шага ──
@@ -511,10 +523,39 @@ export default function CharacterNew() {
                       type="radio"
                       name="gear"
                       checked={gearChoice === 'gold'}
-                      onChange={() => setGearChoice('gold')}
+                      onChange={() => {
+                        setGearChoice('gold');
+                        if (!goldRoll) rollGold();
+                      }}
                     />
-                    <span style={{ fontSize: 14 }}>Или эквивалент золотом</span>
+                    <span style={{ fontSize: 14 }}>
+                      Или эквивалент золотом
+                      {cls?.startingGold && (
+                        <span className="wiz-hint" style={{ marginLeft: 6 }}>
+                          ({cls.startingGold.dice} × {cls.startingGold.multiply} зм)
+                        </span>
+                      )}
+                    </span>
                   </label>
+                  {gearChoice === 'gold' && cls?.startingGold && (
+                    <div className="wiz-gold-roll">
+                      {goldRoll ? (
+                        <>
+                          <span>
+                            {cls.startingGold.dice}: [{goldRoll.rolls.join(', ')}] × {cls.startingGold.multiply} ={' '}
+                            <strong>{goldRoll.total} зм</strong>
+                          </span>
+                          <button type="button" onClick={rollGold}>
+                            <Dices size={13} /> Перебросить
+                          </button>
+                        </>
+                      ) : (
+                        <button type="button" className="primary" onClick={rollGold}>
+                          <Dices size={14} /> Кинуть стартовое золото
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               </>
             )}
@@ -607,6 +648,20 @@ export default function CharacterNew() {
                   <span>{effScores[ab]} ({modifierText(effScores[ab])})</span>
                 </div>
               ))}
+            </div>
+            <div className="summary-block">
+              <h3>Снаряжение</h3>
+              {gearChoice === 'gold' ? (
+                <div className="kv">
+                  <span>Кошелёк</span>
+                  <span>{goldRoll ? `${goldRoll.total} зм` : 'не брошено'}</span>
+                </div>
+              ) : (
+                <div className="kv">
+                  <span>Снаряжение предыстории</span>
+                  <span>{bg?.equipment ?? '—'}</span>
+                </div>
+              )}
             </div>
             {chosenSpells.length > 0 && (
               <div className="summary-block">

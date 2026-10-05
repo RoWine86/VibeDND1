@@ -4,6 +4,42 @@ export type Ability = 'str' | 'dex' | 'con' | 'int' | 'wis' | 'cha';
 
 export const ABILITIES: Ability[] = ['str', 'dex', 'con', 'int', 'wis', 'cha'];
 
+// ─── Валюта (D&D 2024) ──────────────────────────────────────────────────────
+// Четыре номинала: медь (мм/cp), серебро (см/sp), золото (зм/gp), платина
+// (пм/pp). Конверсия: 1 пм = 10 зм = 100 см = 1000 мм. Электрума нет.
+
+/** Ключи монет: cp/sp/gp/pp (в данных), русские сокращения — в COIN_NAMES_RU. */
+export type Currency = 'cp' | 'sp' | 'gp' | 'pp';
+
+export const CURRENCIES: Currency[] = ['cp', 'sp', 'gp', 'pp'];
+
+export const COIN_NAMES_RU: Record<Currency, string> = {
+  cp: 'мм', sp: 'см', gp: 'зм', pp: 'пм',
+};
+
+export const COIN_FULL_NAMES_RU: Record<Currency, string> = {
+  cp: 'медные', sp: 'серебряные', gp: 'золотые', pp: 'платиновые',
+};
+
+/** Стоимость монеты в меди (мм) — для конверсии и сравнения. */
+export const COIN_VALUE_IN_CP: Record<Currency, number> = {
+  cp: 1, sp: 10, gp: 100, pp: 1000,
+};
+
+/** Кошелёк: четыре целых счётчика по номиналам. */
+export interface Coins {
+  cp: number;
+  sp: number;
+  gp: number;
+  pp: number;
+}
+
+/** Цена предмета: сумма в одной валюте (структурно вместо строки «15 зм»). */
+export interface Cost {
+  amount: number;
+  currency: Currency;
+}
+
 export const ABILITY_NAMES_RU: Record<Ability, string> = {
   str: 'Сила',
   dex: 'Ловкость',
@@ -83,6 +119,9 @@ export interface CharacterClass {
   features: ClassLevelFeature[];
   spellSlotsByLevel?: Record<number, number[]>; // уровень персонажа → ячейки [ур1, ур2, ...]
   subclassLevel: number;
+  /** Кости стартового золота (PHB 2024): бросок dice × multiply в зм.
+   *  Например воин — { dice: '5d4', multiply: 10 }. */
+  startingGold?: { dice: string; multiply: number };
   // Владение снаряжением (D&D 2024). Необязательно: если поле отсутствует,
   // профили владения выводятся по id класса (см. rules.ts).
   weaponProficiencies?: {
@@ -168,7 +207,8 @@ export interface Item {
   nameEn: string;
   category: 'weapon' | 'armor' | 'gear' | 'tool' | 'magic' | 'consumable';
   weight?: number;
-  cost?: string;
+  /** Цена предмета (шаг 6): {amount, currency} вместо строки «15 зм». */
+  cost?: Cost;
   description: string;
   // для оружия:
   damageDice?: string; // "1d8"
@@ -294,6 +334,19 @@ export interface Character {
   inspiration: boolean;
   portraitPath?: string;
   notes: string;
+  /** Кошелёк (шаг 6). У старых персонажей в базе поля нет — сервер
+   *  подставляет нули при чтении (см. db.ts). */
+  coins: Coins;
+}
+
+/** Персонаж без кошелька (старые снапшоты) — нормализуется в zeroCoins(). */
+export function zeroCoins(): Coins {
+  return { cp: 0, sp: 0, gp: 0, pp: 0 };
+}
+
+/** Персонаж как пришёл из хранилища: coins может отсутствовать. */
+export function withCoins(ch: Character): Character {
+  return ch.coins ? ch : { ...ch, coins: zeroCoins() };
 }
 
 export function characterLevel(ch: Character): number {

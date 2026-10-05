@@ -2,9 +2,9 @@
 
 import type {
   Ability, AbilityScores, ArmorProficiency, Character, CharacterClass,
-  CombatAttackRoll, Item, Monster, Spell, WeaponCategory,
+  Coins, CombatAttackRoll, Cost, Currency, Item, Monster, Spell, WeaponCategory,
 } from './types.js';
-import { characterLevel } from './types.js';
+import { characterLevel, COIN_VALUE_IN_CP, CURRENCIES, zeroCoins } from './types.js';
 
 export function abilityModifier(score: number): number {
   return Math.floor((score - 10) / 2);
@@ -593,4 +593,140 @@ export function spellProjectileCount(
   if (levelsAbove <= 0) return base;
   if (!/\+1\s*(дротик|луч|снаряд)/i.test(per)) return base;
   return base + levelsAbove;
+}
+
+// ─── Валюта: кошелёк, конверсия, оплата (ROADMAP, шаг 6) ────────────────────
+// Номиналы: 1 пм = 10 зм = 100 см = 1000 мм (COIN_VALUE_IN_CP в types.ts).
+// Монеты ничего не весят (решение ROADMAP).
+
+/** Стоимость в меди (мм) — единая единица для сравнения и конверсии. */
+export function coinsToCp(coins: Coins): number {
+  return CURRENCIES.reduce((sum, c) => sum + (coins[c] ?? 0) * COIN_VALUE_IN_CP[c], 0);
+}
+
+/** Стоимость цены (Cost) в меди. */
+export function costToCp(cost: Cost): number {
+  return cost.amount * COIN_VALUE_IN_CP[cost.currency];
+}
+
+/** Хватает ли кошелька на цену. */
+export function canAfford(coins: Coins, cost: Cost): boolean {
+  return coinsToCp(coins) >= costToCp(cost);
+}
+
+/** Положить монеты в кошелёк (чистая функция). */
+export function addCoins(coins: Coins, add: Partial<Coins>): Coins {
+  const out = { ...zeroCoins(), ...coins };
+  for (const c of CURRENCIES) {
+    out[c] = Math.max(0, Math.round((out[c] ?? 0) + (add[c] ?? 0)));
+  }
+  return out;
+}
+
+/**
+ * Разложить сумму меди по номиналам без мелочи крупнее нужной:
+ * максимально крупные монеты (сдача «наоборот» не создаётся).
+ */
+function cpToCoins(cp: number): Coins {
+  let rest = Math.max(0, Math.round(cp));
+  const out = zeroCoins();
+  for (const c of ['pp', 'gp', 'sp', 'cp'] as Currency[]) {
+    const v = COIN_VALUE_IN_CP[c];
+    out[c] = Math.floor(rest / v);
+    rest -= out[c] * v;
+  }
+  return out;
+}
+
+export interface PayResult {
+  ok: boolean;
+  coins: Coins;
+  /** Сколько всего меди списано (0 при отказе). */
+  paidCp: number;
+  reason?: string;
+}
+
+/**
+ * Заплатить цену из кошелька. Если мелких монет не хватает — автоматический
+ * размен крупных: нужная сумма берётся из кошелька в меди эквиваленте,
+ * остаток размена возвращается мелочью. Пример: 15 зм из «2 пм» → списывается
+ * 1 пм + размен второго: 15 зм = 1500 мм, было 2000 мм → осталось 500 мм.
+ */
+export function pay(coins: Coins, cost: Cost): PayResult {
+  const need = costToCp(cost);
+  const have = coinsToCp(coins);
+  if (have < need) {
+    return { ok: false, coins, paidCp: 0, reason: 'Недостаточно денег' };
+  }
+  // простая стратегия: сначала забираем мелкие номиналы снизу вверх,
+  // нехватку добираем разменом ближайшей крупной монеты
+  const out = { ...zeroCoins(), ...coins };
+  let remaining = need;
+  for (const c of ['cp', 'sp', 'gp', 'pp'] as Currency[]) {
+    if (remaining <= 0) break;
+    const v = COIN_VALUE_IN_CP[c];
+    const take = Math.min(out[c], Math.floor(remaining / v));
+    out[c] -= take;
+    remaining -= take * v;
+  }
+  if (remaining > 0) {
+    // размен: ищем самую мелкую монету крупнее остатка
+    for (const c of ['sp', 'gp', 'pp'] as Currency[]) {
+      const v = COIN_VALUE_IN_CP[c];
+      if (remaining > 0 && out[c] > 0 && v > remaining) {
+        out[c] -= 1;
+        remaining -= v; // уйдёт в минус — сдача
+        // сдача мелочью ниже номинала разменянной монеты
+        const change = -remaining;
+        const changeCoins = cpToCoins(change);
+        // размен pp даёт gp/sp/cp и т.д. — cpToCoins вернёт pp если сдача ≥1000,
+        // но сдача всегда < v ≤ 1000, поэтому pp в сдаче не появится
+        for (const cc of CURRENCIES) out[cc] += changeCoins[cc];
+        remaining = 0;
+        break;
+      }
+    }
+  }
+  if (remaining > 0) {
+    // не должно случиться (have >= need), но страховка
+    return { ok: false, coins, paidCp: 0, reason: 'Недостаточно денег' };
+  }
+  return { ok: true, coins: out, paidCp: need };
+}
+
+/** Начислить цену (продажа, лут) — сумма раскладывается по крупным номиналам. */
+export function earn(coins: Coins, amount: Cost): Coins {
+  return cpToCoins(coinsToCp(coins) + costToCp(amount));
+}
+
+/** Формат цены строкой по-русски: «15 зм». */
+export function costText(cost?: Cost): string {
+  if (!cost) return '—';
+  const ru: Record<Currency, string> = { cp: 'мм', sp: 'см', gp: 'зм', pp: 'пм' };
+  return `${cost.amount} ${ru[cost.currency]}`;
+}
+
+/**
+ * Разобрать строку цены «15 зм» / «5 мм» / «—» в Cost | undefined.
+ * Для миграции seed и старых записей предметов.
+ */
+export function parseCost(text: string | undefined): Cost | undefined {
+  if (!text) return undefined;
+  const m = /^\s*(\d+)\s*(мм|см|зм|пм)\s*$/.exec(text);
+  if (!m) return undefined;
+  const map: Record<string, Currency> = { 'мм': 'cp', 'см': 'sp', 'зм': 'gp', 'пм': 'pp' };
+  return { amount: Number(m[1]), currency: map[m[2]!]! };
+}
+
+/** Стартовое золото класса: бросок костей × множитель (PHB 2024). */
+export function rollStartingGold(cls: Pick<CharacterClass, 'startingGold'>, rng: Rng = defaultRng): number {
+  const sg = cls.startingGold;
+  if (!sg) return 0;
+  const m = DICE_RE.exec(sg.dice.replace(/\s/g, ''));
+  if (!m) return 0;
+  const count = Number(m[1] ?? 1);
+  const sides = Number(m[2]);
+  let total = 0;
+  for (let i = 0; i < count; i++) total += rollDie(sides, rng);
+  return total * sg.multiply;
 }

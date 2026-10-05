@@ -7,8 +7,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
-  BookOpen, Dices, Heart, Moon, Package, ShieldAlert, Skull, Sun, Sword,
-  Target, User, Users, Zap,
+  BookOpen, Coins, Dices, Heart, Moon, Package, ShieldAlert, Skull, Sun,
+  Sword, Target, User, Users, Zap,
 } from 'lucide-react';
 import {
   ABILITIES, ABILITY_NAMES_RU, CONDITION_NAMES_RU, abilityModifier, canEquip,
@@ -21,6 +21,7 @@ import type {
 import { api } from '../api';
 import { SessionProvider, useSessionStore } from '../sessionStore';
 import SpellDetails from '../components/SpellDetails';
+import CoinPurse from '../components/CoinPurse';
 import '../styles/player.css';
 
 type Tab = 'sheet' | 'combat' | 'spells' | 'inventory' | 'party';
@@ -634,6 +635,17 @@ function TabContent(p: {
           <h2><Package size={16} /> На мне</h2>
           <p className="player-dim" style={{ marginBottom: 8 }}>Руки заняты: {usedHands(inv, byId)}/2.</p>
           {equipped.length === 0 ? <p className="player-dim">Ничего не надето.</p> : equipped.map(row)}
+        </section>
+        <section className="player-panel">
+          <h2><Coins size={16} /> Кошелёк</h2>
+          <CoinPurse
+            coins={me.coins}
+            editable
+            onChange={(coins) => patchMe({ coins })}
+          />
+          <p className="player-dim" style={{ marginTop: 8 }}>
+            1 пм = 10 зм = 100 см = 1000 мм
+          </p>
         </section>
         <section className="player-panel">
           <h2>Рюкзак</h2>

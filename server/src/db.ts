@@ -6,6 +6,7 @@ import Database from 'better-sqlite3';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { withCoins } from '@vibednd/shared';
 import type { Adventure, Character, SessionState } from '@vibednd/shared';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -73,8 +74,13 @@ function deleteRow(table: 'characters' | 'adventures' | 'sessions', id: string):
 
 // ─── Персонажи ──────────────────────────────────────────────────────────────
 
-export const listCharacters = (): Character[] => listRows<Character>('characters');
-export const getCharacter = (id: string): Character | undefined => getRow<Character>('characters', id);
+// Миграция без скрипта (шаг 6): у персонажей, сохранённых до появления
+// кошелька, поля coins нет — подставляем нули при каждом чтении.
+export const listCharacters = (): Character[] => listRows<Character>('characters').map(withCoins);
+export const getCharacter = (id: string): Character | undefined => {
+  const ch = getRow<Character>('characters', id);
+  return ch ? withCoins(ch) : undefined;
+};
 export const saveCharacter = (ch: Character): void => putRow('characters', ch.id, ch);
 export const deleteCharacter = (id: string): boolean => deleteRow('characters', id);
 

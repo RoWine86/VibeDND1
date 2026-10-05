@@ -17,6 +17,7 @@ import type {
 } from '@vibednd/shared';
 import { api } from '../api';
 import SpellCard from './SpellCard';
+import CoinPurse from './CoinPurse';
 import '../styles/character.css';
 
 export interface CharacterSheetProps {
@@ -653,6 +654,19 @@ export default function CharacterSheet({ character, onPatch, onRest, readonly }:
             </p>
           )
         )}
+      </div>
+
+      {/* ── Кошелёк ── */}
+      <div className="sheet-section">
+        <h3>Кошелёк</h3>
+        <CoinPurse
+          coins={character.coins}
+          editable={editable}
+          onChange={(coins) => patch({ coins })}
+        />
+        <p className="muted small" style={{ margin: '8px 0 0' }}>
+          1 пм = 10 зм = 100 см = 1000 мм. Монеты ничего не весят.
+        </p>
       </div>
 
       {/* ── Снаряжение ── */}
