@@ -577,6 +577,22 @@ export interface SaveRequest {
   spellName?: string;
 }
 
+/**
+ * Скрытая заявка игрока мастеру (шаг 8): свободный текст («хочу незаметно
+ * стащить ключ»), который видят только отправитель и мастер — в общий лог
+ * не попадает. Мастер одобряет/отклоняет и может написать ответ.
+ */
+export interface SecretRequest {
+  id: string;
+  characterId: string;
+  text: string;
+  status: 'pending' | 'approved' | 'rejected';
+  /** Необязательный ответ мастера («кинь Ловкость (Ловкость рук)»). */
+  reply?: string;
+  createdAt: number;
+  resolvedAt?: number;
+}
+
 export interface DiceLogEntry {
   id: string;
   timestamp: number;
@@ -604,6 +620,8 @@ export interface SessionState {
   saveRequests?: SaveRequest[];
   /** Лента структурных событий боя; старые сессии могут её не иметь. */
   combatLog?: CombatEvent[];
+  /** Скрытые заявки игроков (шаг 8); видны только отправителю и мастеру. */
+  secretRequests?: SecretRequest[];
   createdAt: string;
   updatedAt: string;
 }

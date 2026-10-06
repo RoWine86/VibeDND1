@@ -5,7 +5,7 @@
 
 import type {
   Character, CombatEvent, ConditionKey, DiceLogEntry, DrawStroke, FogShape,
-  Item, LiveToken, SaveRequest, SessionState, TokenKind,
+  Item, LiveToken, SaveRequest, SecretRequest, SessionState, TokenKind,
 } from './types.js';
 
 export type Role = 'dm' | 'board' | 'player';
@@ -88,7 +88,16 @@ export type ClientMsg =
   | { type: 'rest'; characterId: string; kind: 'short' | 'long' }
 
   // игрок с телефона: полный список предметов для инвентаря
-  | { type: 'requestItems' };
+  | { type: 'requestItems' }
+
+  // ── Скрытые заявки (шаг 8) ────────────────────────────────────────────
+
+  // Игрок: свободный текст, видимый только мастеру («хочу незаметно стащить ключ»).
+  | { type: 'secretRequest'; characterId: string; text: string }
+  // Мастер: одобрить/отклонить заявку, необязательно с текстовым ответом.
+  | { type: 'secretResolve'; requestId: string; decision: 'approve' | 'reject'; reply?: string }
+  // История заявок: мастер получает все, игрок — только свои.
+  | { type: 'requestSecrets' };
 
 // ─── Сервер → Клиент ────────────────────────────────────────────────────────
 
@@ -113,6 +122,16 @@ export type ServerMsg =
    *  (за монстров всегда кидает мастер). */
   | { type: 'saveRequest'; request: SaveRequest }
   | { type: 'characterUpdated'; character: Character }
+
+  // ── Скрытые заявки (шаг 8) ────────────────────────────────────────────
+
+  /** Новая заявка игрока — только DM-соединениям; доска и игроки не получают. */
+  | { type: 'secretNew'; request: SecretRequest }
+  /** Решение мастера — только отправителю заявки и DM. */
+  | { type: 'secretResolved'; request: SecretRequest }
+  /** Ответ на requestSecrets — только запросившему клиенту. */
+  | { type: 'secrets'; requests: SecretRequest[] }
+
   | { type: 'activeMap'; mapId: string }
   // ответ на requestItems (шлётся только запросившему клиенту)
   | { type: 'items'; items: Item[] }

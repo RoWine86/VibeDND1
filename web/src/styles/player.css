@@ -352,6 +352,59 @@
   z-index: 20;
 }
 
+/* ── Тайно от партии: скрытые заявки (шаг 8) ── */
+
+.player-secret-form { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.player-secret-form textarea {
+  width: 100%;
+  resize: vertical;
+  padding: 10px 12px;
+  font-size: 15px;
+  font-family: inherit;
+}
+.player-secret-form button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 12px;
+  font-size: 15px;
+}
+
+.player-secret-list { margin-top: 12px; display: flex; flex-direction: column; }
+.player-secret-item {
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+  font-size: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.player-secret-item:first-child { border-top: none; }
+.player-secret-text { color: var(--text); }
+.player-secret-meta { display: flex; align-items: center; gap: 8px; }
+.player-secret-badge {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+.player-secret-badge.status-approved { color: var(--hp-green); border-color: var(--hp-green); }
+.player-secret-badge.status-rejected { color: var(--crimson); border-color: var(--crimson); }
+.player-secret-badge.status-pending { color: var(--gold-bright); border-color: var(--gold); }
+.player-secret-reply {
+  font-size: 13px;
+  color: var(--gold-bright);
+  border-left: 3px solid var(--gold);
+  padding: 4px 10px;
+  background: rgba(201, 162, 39, 0.08);
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+
 /* ── Вес и перегруз (шаг 7) ── */
 
 .player-carry {

@@ -38,6 +38,7 @@ import type {
   LiveToken,
   Monster,
   SaveRequest,
+  SecretRequest,
   SessionState,
   Spell,
   TokenKind,
@@ -142,14 +143,14 @@ export default function DmPage() {
 
 function DmConsole({ onPickSession }: { onPickSession: (id: string) => void }) {
   const store = useSessionStore();
-  const { session, characters, saveRequests } = store;
+  const { session, characters, saveRequests, secretRequests } = store;
   const [adventure, setAdventure] = useState<Adventure | null>(null);
   const [loadError, setLoadError] = useState('');
   // ошибка WS (например, сохранённая сессия удалена) или локальная ошибка API
   const consoleError = store.error || loadError;
 
   // панель
-  const [tab, setTab] = useState<'tokens' | 'combat' | 'notes'>('tokens');
+  const [tab, setTab] = useState<'tokens' | 'combat' | 'requests' | 'notes'>('tokens');
   const [selectedTokenId, setSelectedTokenId] = useState<string | null>(null);
 
   // справочники монстров, заклинаний и предметов (бейдж перегруза, шаг 7)
@@ -327,6 +328,21 @@ function DmConsole({ onPickSession }: { onPickSession: (id: string) => void }) {
 
   const resolveSave = (req: SaveRequest, rolledValue?: number) => {
     emit({ type: 'resolveSave', requestId: req.id, rolledValue });
+  };
+
+  // ── Скрытые заявки игроков (шаг 8) ─────────────────────────────────────
+
+  const pendingSecrets = useMemo(
+    () => secretRequests.filter((r) => r.status === 'pending'),
+    [secretRequests],
+  );
+
+  const resolveSecret = (
+    requestId: string,
+    decision: 'approve' | 'reject',
+    reply?: string,
+  ) => {
+    emit({ type: 'secretResolve', requestId, decision, reply: reply?.trim() || undefined });
   };
 
   // ── Инициатива ───────────────────────────────────────────────────────────
@@ -528,6 +544,10 @@ function DmConsole({ onPickSession }: { onPickSession: (id: string) => void }) {
           <button className={`dm-tab${tab === 'combat' ? ' active' : ''}`} onClick={() => setTab('combat')}>
             <Swords size={14} /> Бой
             {saveRequests.length > 0 && <span className="dm-badge">{saveRequests.length}</span>}
+          </button>
+          <button className={`dm-tab${tab === 'requests' ? ' active' : ''}`} onClick={() => setTab('requests')}>
+            <EyeOff size={14} /> Заявки
+            {pendingSecrets.length > 0 && <span className="dm-badge">{pendingSecrets.length}</span>}
           </button>
           <button className={`dm-tab${tab === 'notes' ? ' active' : ''}`} onClick={() => setTab('notes')}>
             <NotebookPen size={14} /> Заметки
@@ -791,6 +811,32 @@ function DmConsole({ onPickSession }: { onPickSession: (id: string) => void }) {
               </div>
               <DmDiceLog log={session?.diceLog ?? []} />
             </div>
+          </div>
+        )}
+
+        {/* ── Скрытые заявки игроков (шаг 8) ── */}
+        {tab === 'requests' && (
+          <div className="dm-scroll">
+            {secretRequests.length === 0 && (
+              <p className="dm-dim">
+                Скрытых заявок пока нет. Игроки отправляют их из раздела
+                «Тайно от партии» на телефоне.
+              </p>
+            )}
+            {[...secretRequests]
+              .sort((a, b) =>
+                Number(a.status !== 'pending') - Number(b.status !== 'pending')
+                || b.createdAt - a.createdAt)
+              .map((req) => (
+                <SecretRequestCard
+                  key={req.id}
+                  request={req}
+                  characterName={
+                    characters.find((c) => c.id === req.characterId)?.name ?? 'Неизвестный'
+                  }
+                  onResolve={resolveSecret}
+                />
+              ))}
           </div>
         )}
 
@@ -1166,6 +1212,77 @@ function SaveQueueRow({
         <div className="dm-dim dm-save-fallback">
           спасбросок персонажа — ждём игрока; можете вписать за него
         </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Карточка скрытой заявки (шаг 8) ────────────────────────────────────────
+
+const SECRET_STATUS_RU: Record<SecretRequest['status'], string> = {
+  pending: 'ожидает',
+  approved: 'одобрено',
+  rejected: 'отклонено',
+};
+
+const fmtSecretTime = (ts: number) =>
+  new Date(ts).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+
+function SecretRequestCard({
+  request, characterName, onResolve,
+}: {
+  request: SecretRequest;
+  characterName: string;
+  onResolve: (requestId: string, decision: 'approve' | 'reject', reply?: string) => void;
+}) {
+  const [reply, setReply] = useState('');
+  const pending = request.status === 'pending';
+
+  return (
+    <div className={`dm-secret-card status-${request.status}`}>
+      <div className="dm-secret-head">
+        <span className="dm-secret-name">
+          <EyeOff size={13} /> {characterName}
+        </span>
+        <span className={`dm-secret-badge status-${request.status}`}>
+          {SECRET_STATUS_RU[request.status]}
+        </span>
+        <span className="dm-dim dm-secret-time">{fmtSecretTime(request.createdAt)}</span>
+      </div>
+      <div className="dm-secret-text">{request.text}</div>
+      {pending ? (
+        <>
+          <input
+            value={reply}
+            onChange={(e) => setReply(e.target.value)}
+            placeholder="Ответ игроку (необязательно), например: «кинь Ловкость (Ловкость рук)»"
+          />
+          <div className="dm-save-actions">
+            <button
+              className="primary"
+              onClick={() => onResolve(request.id, 'approve', reply)}
+            >
+              Одобрить
+            </button>
+            <button
+              className="dm-btn dm-danger"
+              onClick={() => onResolve(request.id, 'reject', reply)}
+            >
+              Отклонить
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          {request.reply && (
+            <div className="dm-secret-reply">Ваш ответ: {request.reply}</div>
+          )}
+          {request.resolvedAt && (
+            <div className="dm-dim dm-secret-time">
+              решено в {fmtSecretTime(request.resolvedAt)}
+            </div>
+          )}
+        </>
       )}
     </div>
   );

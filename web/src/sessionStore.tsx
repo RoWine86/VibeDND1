@@ -10,7 +10,7 @@ import {
 import type { ReactNode } from 'react';
 import type {
   Character, ClientMsg, CombatEvent, FogShape, Item, Role, SaveRequest,
-  ServerMsg, SessionState,
+  SecretRequest, ServerMsg, SessionState,
 } from '@vibednd/shared';
 import { SessionSocket } from './ws';
 
@@ -31,6 +31,8 @@ export interface SessionStoreState {
   combatEvents: CombatEvent[];
   /** Очередь ожидающих спасбросков, адресованных этому клиенту/мастеру. */
   saveRequests: SaveRequest[];
+  /** Скрытые заявки (шаг 8): мастер видит все, игрок — только свои. */
+  secretRequests: SecretRequest[];
   /** Текст последней WS-ошибки, '' — нет. Страницы трактуют её сами:
    *  доска показывает только «Сессия не найдена», телефон — любую. */
   error: string;
@@ -45,7 +47,8 @@ type Action =
 
 function initialState(role: Role): SessionStoreState {
   return {
-    role, session: null, characters: [], items: [], combatEvents: [], saveRequests: [], error: '',
+    role, session: null, characters: [], items: [], combatEvents: [], saveRequests: [],
+    secretRequests: [], error: '',
   };
 }
 
@@ -69,15 +72,37 @@ function applyServerMsg(state: SessionStoreState, msg: ServerMsg): SessionStoreS
         ? []
         : (msg.session.saveRequests ?? []).filter((r) =>
             role === 'dm' || (r.characterId != null && myIds.has(r.characterId)));
+      // Скрытые заявки в снимке уже отфильтрованы сервером по роли
+      // (мастер — все, игрок — свои, доска — ничего).
       return {
         ...state,
         session: msg.session,
         characters: msg.characters,
         combatEvents: msg.session.combatLog ?? [],
         saveRequests,
+        secretRequests: msg.session.secretRequests ?? [],
         error: '',
       };
     }
+
+    case 'secretNew':
+      // адресовано мастеру; дубли не добавляем
+      return state.secretRequests.some((r) => r.id === msg.request.id)
+        ? state
+        : { ...state, secretRequests: [...state.secretRequests, msg.request] };
+
+    case 'secretResolved':
+      // адресовано отправителю и мастеру: заменяем заявку на решённую
+      return state.secretRequests.some((r) => r.id === msg.request.id)
+        ? {
+            ...state,
+            secretRequests: state.secretRequests.map((r) =>
+              r.id === msg.request.id ? msg.request : r),
+          }
+        : { ...state, secretRequests: [...state.secretRequests, msg.request] };
+
+    case 'secrets':
+      return { ...state, secretRequests: msg.requests };
 
     case 'combatEvent': {
       const events = [...state.combatEvents, msg.event].slice(-COMBAT_LOG_LIMIT);
@@ -244,6 +269,11 @@ export function SessionProvider({
       // и экрану выбора, и инвентарю, и расчёту веса/перегруза (шаг 7).
       if (msg.type === 'snapshot' && role === 'player') {
         sock.send({ type: 'requestItems' });
+      }
+      // История скрытых заявок: снимок уже несёт их для игрока/мастера,
+      // но явный запрос гарантирует актуальность при переподключении.
+      if (msg.type === 'snapshot' && (role === 'player' || role === 'dm')) {
+        sock.send({ type: 'requestSecrets' });
       }
     });
     return () => {

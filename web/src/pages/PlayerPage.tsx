@@ -7,8 +7,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
-  BookOpen, Coins, Dices, Heart, Moon, Package, ShieldAlert, Skull, Sun,
-  Sword, Target, User, Users, Zap,
+  BookOpen, Coins, Dices, EyeOff, Heart, Moon, Package, ShieldAlert, Skull,
+  Sun, Sword, Target, User, Users, Zap,
 } from 'lucide-react';
 import {
   ABILITIES, ABILITY_NAMES_RU, CONDITION_NAMES_RU, ENCUMBRANCE_TIER_RU,
@@ -18,8 +18,8 @@ import {
 } from '@vibednd/shared';
 import type {
   Ability, AttackEntry, Character, CharacterClass, ClientMsg, CombatEvent,
-  DiceLogEntry, EncumbranceTier, Item, LiveToken, SaveRequest, SessionState,
-  Species, Spell,
+  DiceLogEntry, EncumbranceTier, Item, LiveToken, SaveRequest, SecretRequest,
+  SessionState, Species, Spell,
 } from '@vibednd/shared';
 import { api } from '../api';
 import { SessionProvider, useSessionStore } from '../sessionStore';
@@ -62,7 +62,8 @@ function PlayerContent({
 }) {
   const navigate = useNavigate();
   const {
-    session, characters, items, combatEvents, saveRequests, error, send,
+    session, characters, items, combatEvents, saveRequests, secretRequests,
+    error, send,
   } = useSessionStore();
 
   const [classes, setClasses] = useState<CharacterClass[]>([]);
@@ -224,6 +225,7 @@ function PlayerContent({
           classesById={classesById}
           characters={characters}
           combatEvents={combatEvents}
+          secretRequests={secretRequests.filter((r) => r.characterId === characterId)}
           baseSpeed={speciesList.find((s) => s.id === me.speciesId)?.speed ?? 30}
           patchMe={patchMe}
           roll={roll}
@@ -309,6 +311,78 @@ function SaveRequestModal({
   );
 }
 
+// ─── Тайно от партии: скрытые заявки мастеру (шаг 8) ────────────────────────
+
+const SECRET_STATUS_RU: Record<SecretRequest['status'], string> = {
+  pending: 'ожидает',
+  approved: 'одобрено',
+  rejected: 'отклонено',
+};
+
+/**
+ * Раздел «Тайно от партии»: свободный текст видят только игрок и мастер —
+ * на доску и другим игрокам он не попадает. Список — свои заявки со статусом
+ * и ответом мастера.
+ */
+function SecretRequestPanel({
+  characterId, requests, send, flash,
+}: {
+  characterId: string;
+  requests: SecretRequest[];
+  send: (msg: ClientMsg) => void;
+  flash: (text: string) => void;
+}) {
+  const [text, setText] = useState('');
+  const sorted = [...requests].sort((a, b) => b.createdAt - a.createdAt);
+
+  const submit = () => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    send({ type: 'secretRequest', characterId, text: trimmed });
+    setText('');
+    flash('Заявка отправлена мастеру');
+  };
+
+  return (
+    <section className="player-panel player-secret">
+      <h2><EyeOff size={16} /> Тайно от партии</h2>
+      <p className="player-dim">
+        Напишите мастеру то, что не должны видеть другие игроки: «хочу незаметно
+        стащить ключ», «шепчу союзнику план». Партия и доска этого не увидят.
+      </p>
+      <div className="player-secret-form">
+        <textarea
+          rows={2}
+          value={text}
+          placeholder="Что вы делаете тайно…"
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submit();
+          }}
+        />
+        <button className="primary" onClick={submit} disabled={!text.trim()}>
+          <EyeOff size={15} /> Отправить мастеру
+        </button>
+      </div>
+      {sorted.length > 0 && (
+        <div className="player-secret-list">
+          {sorted.map((r) => (
+            <div key={r.id} className={`player-secret-item status-${r.status}`}>
+              <div className="player-secret-text">{r.text}</div>
+              <div className="player-secret-meta">
+                <span className={`player-secret-badge status-${r.status}`}>
+                  {SECRET_STATUS_RU[r.status]}
+                </span>
+              </div>
+              {r.reply && <div className="player-secret-reply">Мастер: {r.reply}</div>}
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 // ─── Полоса хитов ───────────────────────────────────────────────────────────
 
 function HpBar({
@@ -343,6 +417,7 @@ function TabContent(p: {
   classesById: Map<string, CharacterClass>;
   characters: Character[];
   combatEvents: CombatEvent[];
+  secretRequests: SecretRequest[];
   baseSpeed: number;
   patchMe: (patch: Partial<Character>) => void;
   roll: (label: string, formula: string) => void;
@@ -435,6 +510,8 @@ function TabContent(p: {
             ))}</span>
           </div>
         </section>
+
+        <SecretRequestPanel characterId={me.id} requests={p.secretRequests} send={send} flash={flash} />
       </div>
     );
   }

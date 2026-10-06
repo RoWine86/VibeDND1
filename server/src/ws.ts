@@ -18,6 +18,7 @@ import {
   type Monster,
   type Role,
   type SaveRequest,
+  type SecretRequest,
   type ServerMsg,
   type SessionState,
   type Spell,
@@ -139,7 +140,8 @@ function ownsSaveRequest(client: Client, req: SaveRequest): boolean {
 
 /** Доска и игроки не видят скрытые токены, скрытые броски и заметки о тумане.
  *  Очередь спасбросков: доске не нужна вовсе, игроку — только его персонажа.
- *  Лента боя: события со скрытыми токенами — только мастеру. */
+ *  Лента боя: события со скрытыми токенами — только мастеру.
+ *  Скрытые заявки (шаг 8): доске — никогда, игроку — только свои. */
 function filterSessionForRole(session: SessionState, role: Role, characterId?: string): SessionState {
   if (role === 'dm') return session;
   const hiddenIds = new Set(session.tokens.filter((t) => t.hidden).map((t) => t.id));
@@ -152,6 +154,8 @@ function filterSessionForRole(session: SessionState, role: Role, characterId?: s
       !(e.targetTokenId && hiddenIds.has(e.targetTokenId))),
     saveRequests: (session.saveRequests ?? []).filter((r) =>
       role === 'player' && r.characterId != null && r.characterId === characterId),
+    secretRequests: (session.secretRequests ?? []).filter((r) =>
+      role === 'player' && r.characterId === characterId),
   };
 }
 
@@ -647,6 +651,73 @@ function handleMessage(client: Client, session: SessionState, msg: ClientMsg): v
     case 'requestItems': {
       const items = db.listEntities('item') as Item[];
       sendTo(client, { type: 'items', items });
+      return;
+    }
+
+    // ── Скрытые заявки (шаг 8) ────────────────────────────────────────────
+
+    case 'secretRequest': {
+      if (client.role !== 'player') {
+        sendError(client, 'Скрытые заявки отправляют только игроки');
+        return;
+      }
+      if (!msg.characterId || client.characterId !== msg.characterId) {
+        sendError(client, 'Игрок отправляет заявки только за своего персонажа');
+        return;
+      }
+      const text = msg.text.trim();
+      if (!text) {
+        sendError(client, 'Пустая заявка');
+        return;
+      }
+      const request: SecretRequest = {
+        id: randomUUID(),
+        characterId: msg.characterId,
+        text,
+        status: 'pending',
+        createdAt: Date.now(),
+      };
+      session.secretRequests = [...(session.secretRequests ?? []), request];
+      db.saveSession(session);
+      // только мастеру: доска и другие игроки ничего не получают
+      broadcastTo(session.id, { type: 'secretNew', request }, (c) => c.role === 'dm');
+      return;
+    }
+
+    case 'secretResolve': {
+      if (!requireDm(client)) return;
+      const all = session.secretRequests ?? [];
+      const request = all.find((r) => r.id === msg.requestId);
+      if (!request) {
+        sendError(client, 'Заявка не найдена');
+        return;
+      }
+      if (request.status !== 'pending') {
+        sendError(client, 'Заявка уже решена');
+        return;
+      }
+      request.status = msg.decision === 'approve' ? 'approved' : 'rejected';
+      const reply = msg.reply?.trim();
+      if (reply) request.reply = reply;
+      request.resolvedAt = Date.now();
+      db.saveSession(session);
+      // отправителю заявки и всем мастерам
+      broadcastTo(session.id, { type: 'secretResolved', request }, (c) =>
+        c.role === 'dm' || (c.role === 'player' && c.characterId === request.characterId));
+      return;
+    }
+
+    case 'requestSecrets': {
+      if (client.role === 'board') {
+        sendError(client, 'Доска не видит скрытые заявки');
+        return;
+      }
+      const all = session.secretRequests ?? [];
+      // мастер получает всю историю, игрок — только свои заявки
+      const requests = client.role === 'dm'
+        ? all
+        : all.filter((r) => r.characterId === client.characterId);
+      sendTo(client, { type: 'secrets', requests });
       return;
     }
   }
