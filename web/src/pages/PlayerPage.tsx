@@ -11,12 +11,15 @@ import {
   Sword, Target, User, Users, Zap,
 } from 'lucide-react';
 import {
-  ABILITIES, ABILITY_NAMES_RU, CONDITION_NAMES_RU, abilityModifier, canEquip,
-  characterLevel, classNameRu, modifierText, proficiencyBonus, usedHands,
+  ABILITIES, ABILITY_NAMES_RU, CONDITION_NAMES_RU, ENCUMBRANCE_TIER_RU,
+  abilityModifier, canEquip, carryingCapacity, characterLevel, classNameRu,
+  effectiveSpeed, encumbranceTier, inventoryWeight, modifierText,
+  proficiencyBonus, usedHands,
 } from '@vibednd/shared';
 import type {
   Ability, AttackEntry, Character, CharacterClass, ClientMsg, CombatEvent,
-  DiceLogEntry, Item, LiveToken, SaveRequest, SessionState, Spell,
+  DiceLogEntry, EncumbranceTier, Item, LiveToken, SaveRequest, SessionState,
+  Species, Spell,
 } from '@vibednd/shared';
 import { api } from '../api';
 import { SessionProvider, useSessionStore } from '../sessionStore';
@@ -64,6 +67,7 @@ function PlayerContent({
 
   const [classes, setClasses] = useState<CharacterClass[]>([]);
   const [spells, setSpells] = useState<Spell[]>([]);
+  const [speciesList, setSpeciesList] = useState<Species[]>([]);
   const [toast, setToast] = useState('');
   const [tab, setTab] = useState<Tab>('sheet');
   const toastTimer = useRef<number>(0);
@@ -78,6 +82,7 @@ function PlayerContent({
   useEffect(() => {
     api.get<CharacterClass[]>('/entities/class').then(setClasses).catch(() => undefined);
     api.get<Spell[]>('/entities/spell').then(setSpells).catch(() => undefined);
+    api.get<Species[]>('/entities/species').then(setSpeciesList).catch(() => undefined);
   }, []);
 
   const patchMe = (patch: Partial<Character>) => {
@@ -219,6 +224,7 @@ function PlayerContent({
           classesById={classesById}
           characters={characters}
           combatEvents={combatEvents}
+          baseSpeed={speciesList.find((s) => s.id === me.speciesId)?.speed ?? 30}
           patchMe={patchMe}
           roll={roll}
           send={send}
@@ -337,12 +343,13 @@ function TabContent(p: {
   classesById: Map<string, CharacterClass>;
   characters: Character[];
   combatEvents: CombatEvent[];
+  baseSpeed: number;
   patchMe: (patch: Partial<Character>) => void;
   roll: (label: string, formula: string) => void;
   send: (msg: ClientMsg) => void;
   flash: (text: string) => void;
 }) {
-  const { tab, me, log, items, spells, classesById, combatEvents, patchMe, roll, send, flash } = p;
+  const { tab, me, log, items, spells, classesById, combatEvents, baseSpeed, patchMe, roll, send, flash } = p;
   const prof = proficiencyBonus(characterLevel(me));
 
   // Цели на активной карте из стора сессии. Скрытые токены игроку не
@@ -599,17 +606,34 @@ function TabContent(p: {
     const equipped = inv.filter((e) => e.equipped);
     const bag = inv.filter((e) => !e.equipped);
     const byId = new Map(items.map((it) => [it.id, it]));
+    // вес и перегруз (шаг 7)
+    const carried = inventoryWeight(me, byId);
+    const capacity = carryingCapacity(me);
+    const tier = encumbranceTier(carried, me);
+    const speed = effectiveSpeed(baseSpeed, tier);
+    const tierColor = tier === 'normal' ? 'var(--hp-green)'
+      : tier === 'encumbered' ? 'var(--gold-bright)'
+        : 'var(--crimson)';
+    const TIER_ORDER: EncumbranceTier[] = ['normal', 'encumbered', 'heavily', 'overloaded'];
     const toggle = (itemId: string, equip: boolean) =>
       patchMe({ inventory: inv.map((e) => (e.itemId === itemId ? { ...e, equipped: equip } : e)) });
     const remove = (itemId: string) =>
       patchMe({ inventory: inv.filter((e) => e.itemId !== itemId) });
     const add = (itemId: string) => {
       if (!itemId) return;
-      if (inv.some((e) => e.itemId === itemId)) {
-        patchMe({ inventory: inv.map((e) => (e.itemId === itemId ? { ...e, quantity: e.quantity + 1 } : e)) });
-      } else {
-        patchMe({ inventory: [...inv, { itemId, quantity: 1, equipped: false }] });
+      const next = inv.some((e) => e.itemId === itemId)
+        ? inv.map((e) => (e.itemId === itemId ? { ...e, quantity: e.quantity + 1 } : e))
+        : [...inv, { itemId, quantity: 1, equipped: false }];
+      // предупреждение, если переваливаем ступень перегруза
+      const nextTier = encumbranceTier(inventoryWeight({ inventory: next }, byId), me);
+      if (TIER_ORDER.indexOf(nextTier) > TIER_ORDER.indexOf(tier)) {
+        const ok = window.confirm(
+          `С этим предметом вес вырастет до ${inventoryWeight({ inventory: next }, byId)} фн — `
+          + `ступень «${ENCUMBRANCE_TIER_RU[nextTier]}» (скорость ${effectiveSpeed(baseSpeed, nextTier)} фт). Всё равно добавить?`,
+        );
+        if (!ok) return;
       }
+      patchMe({ inventory: next });
     };
     const row = (e: { itemId: string; quantity: number; equipped: boolean }) => {
       const it = byId.get(e.itemId);
@@ -634,6 +658,23 @@ function TabContent(p: {
         <section className="player-panel">
           <h2><Package size={16} /> На мне</h2>
           <p className="player-dim" style={{ marginBottom: 8 }}>Руки заняты: {usedHands(inv, byId)}/2.</p>
+          {/* Вес и перегруз (шаг 7) */}
+          <div className="player-carry" style={{ borderLeftColor: tierColor }}>
+            <span className="player-carry-weight" style={{ color: tierColor }}>
+              {carried} / {capacity} фунтов
+            </span>
+            <span className="player-carry-tier">
+              {ENCUMBRANCE_TIER_RU[tier]} · скорость {speed} фт
+              {tier !== 'normal' && speed > 0 && speed !== baseSpeed ? ` (обычно ${baseSpeed})` : ''}
+            </span>
+          </div>
+          {tier !== 'normal' && (
+            <p className="player-dim" style={{ color: tierColor, margin: '6px 0 8px', fontSize: 12.5 }}>
+              {tier === 'encumbered' && `Вес выше Сила×5: скорость −10 футов.`}
+              {tier === 'heavily' && `Вес выше Сила×10: скорость вдвое.`}
+              {tier === 'overloaded' && `Вес выше Сила×15: скорость 0 — идти нельзя.`}
+            </p>
+          )}
           {equipped.length === 0 ? <p className="player-dim">Ничего не надето.</p> : equipped.map(row)}
         </section>
         <section className="player-panel">

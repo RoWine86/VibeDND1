@@ -730,3 +730,70 @@ export function rollStartingGold(cls: Pick<CharacterClass, 'startingGold'>, rng:
   for (let i = 0; i < count; i++) total += rollDie(sides, rng);
   return total * sg.multiply;
 }
+
+// ─── Вес инвентаря и перегруз (ROADMAP, шаг 7) ──────────────────────────────
+// Ступени от Силы (не от расы): ≤Сила×5 — полная скорость, ≤Сила×10 —
+// скорость −10 футов, ≤Сила×15 — скорость вдвое, >Сила×15 — скорость 0.
+// Движение токенов на доске не блокируется — это только информация + бейдж.
+// Монеты ничего не весят (решение ROADMAP).
+
+/** Ступень перегруза: normal / encumbered (−10 фт) / heavily (÷2) / overloaded (0). */
+export type EncumbranceTier = 'normal' | 'encumbered' | 'heavily' | 'overloaded';
+
+export const ENCUMBRANCE_TIER_RU: Record<EncumbranceTier, string> = {
+  normal: 'В норме',
+  encumbered: 'Нагружен',
+  heavily: 'Сильно нагружен',
+  overloaded: 'Перегружен',
+};
+
+/** Максимальный вес без штрафа = Сила × 5 (ступени: ×10, ×15). */
+export function carryingCapacity(character: Pick<Character, 'abilityScores' | 'backgroundBonuses'>): number {
+  const str = effectiveScores(character as Character).str;
+  return str * 5;
+}
+
+/** Пороги ступеней в фунтах по Силе: [норма, нагружен, сильно, перегруз]. */
+export function encumbranceThresholds(character: Pick<Character, 'abilityScores' | 'backgroundBonuses'>): {
+  normal: number; encumbered: number; heavily: number; overloaded: number;
+} {
+  const str = effectiveScores(character as Character).str;
+  return { normal: str * 5, encumbered: str * 10, heavily: str * 15, overloaded: str * 15 };
+}
+
+/** Ступень перегруза по суммарному весу (в фунтах). */
+export function encumbranceTier(weight: number, character: Pick<Character, 'abilityScores' | 'backgroundBonuses'>): EncumbranceTier {
+  const t = encumbranceThresholds(character);
+  if (weight <= t.normal) return 'normal';
+  if (weight <= t.encumbered) return 'encumbered';
+  if (weight <= t.heavily) return 'heavily';
+  return 'overloaded';
+}
+
+/**
+ * Суммарный вес инвентаря: weight × quantity по всем предметам (рюкзак +
+ * надетое). Монеты не весят. Предметы без weight считаются нулевыми.
+ */
+export function inventoryWeight(
+  character: Pick<Character, 'inventory'>,
+  itemById: Map<string, Item>,
+): number {
+  return character.inventory.reduce((sum, e) => {
+    const it = itemById.get(e.itemId);
+    return sum + (it?.weight ?? 0) * (e.quantity ?? 1);
+  }, 0);
+}
+
+/**
+ * Текущая скорость с учётом перегруза. baseSpeed — базовая скорость из вида
+ * (species.speed). Ступени: норма — без изменений, нагружен — −10 фт (мин 5),
+ * сильно нагружен — вдвое (округление вниз), перегруз — 0.
+ */
+export function effectiveSpeed(baseSpeed: number, tier: EncumbranceTier): number {
+  switch (tier) {
+    case 'normal': return baseSpeed;
+    case 'encumbered': return Math.max(5, baseSpeed - 10);
+    case 'heavily': return Math.max(0, Math.floor(baseSpeed / 2));
+    case 'overloaded': return 0;
+  }
+}

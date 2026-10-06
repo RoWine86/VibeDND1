@@ -351,3 +351,18 @@
   font-weight: 700;
   z-index: 20;
 }
+
+/* ── Вес и перегруз (шаг 7) ── */
+
+.player-carry {
+  border-left: 3px solid var(--hp-green);
+  background: var(--bg-raised);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.player-carry-weight { font-weight: 700; font-size: 15px; }
+.player-carry-tier { color: var(--text-dim); font-size: 13px; }

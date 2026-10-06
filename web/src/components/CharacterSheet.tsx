@@ -7,13 +7,14 @@ import {
   Zap,
 } from 'lucide-react';
 import {
-  ABILITIES, ABILITY_NAMES_RU, CONDITION_NAMES_RU, SKILL_ABILITY, SKILL_NAMES_RU,
-  abilityModifier, canEquip, characterLevel, effectiveScores, formatFormula, modifierText,
-  signedText, proficiencyBonus, rollDice, isProficientWith, usedHands,
+  ABILITIES, ABILITY_NAMES_RU, CONDITION_NAMES_RU, ENCUMBRANCE_TIER_RU, SKILL_ABILITY,
+  SKILL_NAMES_RU, abilityModifier, canEquip, carryingCapacity, characterLevel,
+  effectiveScores, effectiveSpeed, encumbranceTier, formatFormula, inventoryWeight,
+  modifierText, signedText, proficiencyBonus, rollDice, isProficientWith, usedHands,
 } from '@vibednd/shared';
 import type {
-  Ability, Character, CharacterClass, ClassResource, ConditionKey, Item,
-  SkillKey, Species, Spell,
+  Ability, Character, CharacterClass, ClassResource, ConditionKey,
+  EncumbranceTier, Item, SkillKey, Species, Spell,
 } from '@vibednd/shared';
 import { api } from '../api';
 import SpellCard from './SpellCard';
@@ -41,6 +42,8 @@ interface RollResult {
 
 const SKILL_KEYS = Object.keys(SKILL_NAMES_RU) as SkillKey[];
 const CONDITION_KEYS = Object.keys(CONDITION_NAMES_RU) as ConditionKey[];
+// порядок ступеней перегруза: от лёгкой к тяжёлой (для сравнения «перевалило ли»)
+const TIER_ORDER: EncumbranceTier[] = ['normal', 'encumbered', 'heavily', 'overloaded'];
 
 export default function CharacterSheet({ character, onPatch, onRest, readonly }: CharacterSheetProps) {
   const editable = !!onPatch && !readonly;
@@ -110,7 +113,18 @@ export default function CharacterSheet({ character, onPatch, onRest, readonly }:
   if (hasShield) armorClass += 2;
 
   const initiative = dexMod;
-  const speed = speciesObj?.speed ?? 30;
+  const baseSpeed = speciesObj?.speed ?? 30;
+
+  // ── Вес и перегруз (шаг 7) ──
+  const carried = inventoryWeight(character, itemById);
+  const capacity = carryingCapacity(character);
+  const thresholdsEncumbered = capacity * 2; // Сила×10
+  const thresholdsHeavily = capacity * 3;    // Сила×15
+  const tier = encumbranceTier(carried, character);
+  const speed = effectiveSpeed(baseSpeed, tier);
+  const tierColor = tier === 'normal' ? 'var(--hp-green)'
+    : tier === 'encumbered' ? 'var(--gold-bright)'
+      : 'var(--crimson)';
   const passivePerception =
     10 + abilityModifier(scores[SKILL_ABILITY.perception])
     + (character.skillProficiencies.includes('perception') ? prof : 0);
@@ -225,6 +239,16 @@ export default function CharacterSheet({ character, onPatch, onRest, readonly }:
       ? character.inventory.map((e) =>
           e.itemId === invItemId ? { ...e, quantity: e.quantity + invQty } : e)
       : [...character.inventory, { itemId: invItemId, quantity: invQty, equipped: false }];
+    // предупреждение, если добавление переваливает ступень перегруза
+    const nextWeight = inventoryWeight({ inventory }, itemById);
+    const nextTier = encumbranceTier(nextWeight, character);
+    if (TIER_ORDER.indexOf(nextTier) > TIER_ORDER.indexOf(tier)) {
+      const ok = window.confirm(
+        `С этим предметом вес вырастет до ${nextWeight} фн — ступень «${ENCUMBRANCE_TIER_RU[nextTier]}» `
+        + `(скорость ${effectiveSpeed(baseSpeed, nextTier)} фт). Всё равно добавить?`,
+      );
+      if (!ok) return;
+    }
     patch({ inventory });
     setInvItemId('');
     setInvQty(1);
@@ -306,7 +330,9 @@ export default function CharacterSheet({ character, onPatch, onRest, readonly }:
         </div>
         <div className="derived-box">
           <div className="db-label">Скорость</div>
-          <div className="db-value">{speed} фт</div>
+          <div className="db-value" style={tier !== 'normal' ? { color: tierColor } : undefined}>
+            {speed} фт{tier !== 'normal' && speed > 0 ? ` (${baseSpeed})` : ''}
+          </div>
         </div>
         <div className="derived-box">
           <div className="db-label">Кость хитов</div>
@@ -675,6 +701,23 @@ export default function CharacterSheet({ character, onPatch, onRest, readonly }:
         <p className="muted small" style={{ margin: '0 0 8px' }}>
           Руки заняты: {usedHands(character.inventory, itemById)}/2 (одноручное оружие и щит — по руке, двуручное — обе).
         </p>
+        {/* Вес и перегруз (шаг 7) */}
+        <p className="carry-line" style={{ margin: '0 0 8px' }}>
+          <span style={{ color: tierColor, fontWeight: 700 }}>
+            {carried} / {capacity} фунтов
+          </span>
+          <span className="muted small" style={{ marginLeft: 8 }}>
+            {ENCUMBRANCE_TIER_RU[tier]}
+            {tier !== 'normal' && ` · скорость ${speed} фт`}
+          </span>
+        </p>
+        {tier !== 'normal' && (
+          <div className="hint-box" style={{ marginBottom: 8, borderColor: tierColor }}>
+            {tier === 'encumbered' && `Вес выше Сила×5 (${capacity} фн): скорость −10 фт.`}
+            {tier === 'heavily' && `Вес выше Сила×10 (${thresholdsEncumbered} фн): скорость вдвое (${speed} фт).`}
+            {tier === 'overloaded' && `Вес выше Сила×15 (${thresholdsHeavily} фн): скорость 0 — персонаж не может идти.`}
+          </div>
+        )}
         {character.inventory.length === 0 && <p className="muted small">Пусто</p>}
         {character.inventory.map((entry) => {
           const item = itemById.get(entry.itemId);

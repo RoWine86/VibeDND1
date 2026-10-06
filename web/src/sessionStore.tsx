@@ -240,9 +240,9 @@ export function SessionProvider({
     sockRef.current = sock;
     const off = sock.onMessage((msg) => {
       dispatch({ type: 'serverMsg', msg });
-      // Телефон без выбранного персонажа: вслед за снимком просим полный
-      // список предметов для инвентаря (прежнее поведение PlayerPage).
-      if (msg.type === 'snapshot' && role === 'player' && !characterId) {
+      // Телефон: вслед за снимком просим полный список предметов — они нужны
+      // и экрану выбора, и инвентарю, и расчёту веса/перегруза (шаг 7).
+      if (msg.type === 'snapshot' && role === 'player') {
         sock.send({ type: 'requestItems' });
       }
     });

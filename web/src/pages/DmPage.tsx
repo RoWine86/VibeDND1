@@ -34,6 +34,7 @@ import type {
   DiceLogEntry,
   DrawShape,
   FogShape,
+  Item,
   LiveToken,
   Monster,
   SaveRequest,
@@ -41,7 +42,10 @@ import type {
   Spell,
   TokenKind,
 } from '@vibednd/shared';
-import { abilityModifier, effectiveScores, CONDITION_NAMES_RU } from '@vibednd/shared';
+import {
+  abilityModifier, effectiveScores, encumbranceTier, inventoryWeight,
+  CONDITION_NAMES_RU,
+} from '@vibednd/shared';
 import { SessionProvider, useSessionStore } from '../sessionStore';
 import { api } from '../api';
 import MapCanvas from '../components/MapCanvas';
@@ -148,12 +152,14 @@ function DmConsole({ onPickSession }: { onPickSession: (id: string) => void }) {
   const [tab, setTab] = useState<'tokens' | 'combat' | 'notes'>('tokens');
   const [selectedTokenId, setSelectedTokenId] = useState<string | null>(null);
 
-  // справочники монстров и заклинаний (атаки/заклинания токенов)
+  // справочники монстров, заклинаний и предметов (бейдж перегруза, шаг 7)
   const [monsters, setMonsters] = useState<Monster[]>([]);
   const [spells, setSpells] = useState<Spell[]>([]);
+  const [itemList, setItemList] = useState<Item[]>([]);
   useEffect(() => {
     api.get<Monster[]>('/entities/monster').then(setMonsters).catch(() => setMonsters([]));
     api.get<Spell[]>('/entities/spell').then(setSpells).catch(() => setSpells([]));
+    api.get<Item[]>('/entities/item').then(setItemList).catch(() => setItemList([]));
   }, []);
 
   // размещение нового токена кликом по карте
@@ -212,6 +218,19 @@ function DmConsole({ onPickSession }: { onPickSession: (id: string) => void }) {
   );
   const selectedToken = mapTokens.find((t) => t.id === selectedTokenId) ?? null;
   const monsterById = useMemo(() => new Map(monsters.map((m) => [m.id, m])), [monsters]);
+  const itemById = useMemo(() => new Map(itemList.map((i) => [i.id, i])), [itemList]);
+  // перегруженные токены (вес > Сила×5) — бейдж на карте (шаг 7)
+  const encumberedTokenIds = useMemo(() => {
+    const set = new Set<string>();
+    for (const t of mapTokens) {
+      if (!t.characterId) continue;
+      const ch = characters.find((c) => c.id === t.characterId);
+      if (!ch) continue;
+      const tier = encumbranceTier(inventoryWeight(ch, itemById), ch);
+      if (tier !== 'normal') set.add(t.id);
+    }
+    return set;
+  }, [mapTokens, characters, itemById]);
   const spellById = useMemo(() => new Map(spells.map((s) => [s.id, s])), [spells]);
   const selectedMonster = selectedToken?.monsterId
     ? monsterById.get(selectedToken.monsterId)
@@ -437,6 +456,7 @@ function DmConsole({ onPickSession }: { onPickSession: (id: string) => void }) {
           mode="dm"
           characters={characters}
           combatEvents={store.combatEvents}
+          encumberedTokenIds={encumberedTokenIds}
           onTokenMove={onTokenMove}
           onFog={onFog}
           onFogReset={() => map && emit({ type: 'fogReset', mapId: map.id })}

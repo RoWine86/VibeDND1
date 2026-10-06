@@ -415,3 +415,6 @@ button.inv-eq { cursor: pointer; }
   .hp-nums { font-size: 24px; }
   .lib-grid { grid-template-columns: 1fr; }
 }
+
+/* Вес и перегруз (шаг 7) */
+.carry-line { font-size: 14px; }

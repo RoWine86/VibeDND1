@@ -73,6 +73,8 @@ export interface MapCanvasProps {
   combatEvents?: CombatEvent[];
   /** Включены ли анимации боя (переключатель на доске, localStorage). */
   animationsEnabled?: boolean;
+  /** id токенов с перегрузом (вес > Сила×5) — маленький бейдж на токене (шаг 7). */
+  encumberedTokenIds?: ReadonlySet<string>;
   /** Тулбар инструментов (только режим dm). По умолчанию виден. */
   showToolbar?: boolean;
   /** Начальная активная вкладка тулбара. По умолчанию 'draw'. */
@@ -525,6 +527,7 @@ export default function MapCanvas(props: MapCanvasProps) {
     defaultPanel = 'draw',
     combatEvents,
     animationsEnabled = true,
+    encumberedTokenIds,
   } = props;
 
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -1178,6 +1181,25 @@ export default function MapCanvas(props: MapCanvasProps) {
           ctx.textBaseline = 'middle';
           ctx.fillText(CONDITION_SHORT[c] ?? c.slice(0, 3), bx + w / 2, by + h / 2 + 0.5);
         });
+      }
+
+      // бейдж «перегружен» (шаг 7): маленький значок гири слева вверху
+      if (encumberedTokenIds?.has(t.id)) {
+        const h = Math.max(10, cell * 0.34);
+        const bx = cx - r - 1;
+        const by = cy - r + 2;
+        ctx.fillStyle = 'rgba(30, 24, 48, 0.92)';
+        ctx.strokeStyle = '#f0c948';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(bx, by, h, h, 3);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = '#f0c948';
+        ctx.font = `700 ${h * 0.66}px "Noto Sans", sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('⚖', bx + h / 2, by + h / 2 + 0.5);
       }
 
       ctx.restore();
