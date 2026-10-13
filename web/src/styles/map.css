@@ -752,6 +752,45 @@
   justify-content: center;
 }
 
+/* ── Скрытые заявки игроков (шаг 8) ───────────────────────────────────────── */
+
+.dm-secret-card {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--gold);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 14px;
+}
+.dm-secret-card.status-approved { border-left-color: var(--hp-green); }
+.dm-secret-card.status-rejected { border-left-color: var(--crimson); opacity: 0.75; }
+.dm-secret-head { display: flex; align-items: center; gap: 8px; }
+.dm-secret-name { font-weight: 700; color: var(--gold); display: flex; align-items: center; gap: 5px; }
+.dm-secret-time { margin-left: auto; font-size: 12px; }
+.dm-secret-text { color: var(--text); white-space: pre-wrap; }
+.dm-secret-badge {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+.dm-secret-badge.status-approved { color: var(--hp-green); border-color: var(--hp-green); }
+.dm-secret-badge.status-rejected { color: var(--crimson); border-color: var(--crimson); }
+.dm-secret-badge.status-pending { color: var(--gold-bright); border-color: var(--gold); }
+.dm-secret-reply {
+  font-size: 13px;
+  color: var(--text-dim);
+  border-left: 2px solid var(--border);
+  padding-left: 8px;
+}
+
 /* ── Боевая лента на доске (шаг 4) ───────────────────────────────────────── */
 
 .board-combat-log { align-items: flex-end; flex-direction: column; gap: 6px; }
