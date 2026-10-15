@@ -258,6 +258,19 @@ button svg { vertical-align: -2px; }
 .lobby-hero { text-align: center; margin: 28px 0 30px; }
 .lobby-hero h1 { font-size: 44px; font-weight: 900; letter-spacing: 0.06em; }
 .lobby-hero p { color: var(--text-dim); margin-top: 8px; }
+
+/* Логотип d20-V в шапке лобби (шаг 9): тот же файл, что и фавикон. */
+.lobby-logo {
+  display: block;
+  width: 88px;
+  height: 88px;
+  margin: 0 auto 14px;
+  filter: drop-shadow(0 4px 18px rgba(201, 162, 39, 0.22));
+}
+@media (max-width: 480px) {
+  .lobby-logo { width: 68px; height: 68px; margin-bottom: 10px; }
+  .lobby-hero h1 { font-size: 34px; }
+}
 .lobby-tiles {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));

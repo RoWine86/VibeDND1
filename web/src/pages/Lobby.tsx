@@ -26,6 +26,7 @@ export default function Lobby() {
   return (
     <div className="page lobby anim-fade-in">
       <div className="lobby-hero">
+        <img className="lobby-logo" src="/logo.svg" alt="VibeDND" width="88" height="88" />
         <h1>VibeDND</h1>
         <p>Живая игра в D&D 2024 за одним столом: общая доска, консоль мастера и телефоны игроков.</p>
       </div>
